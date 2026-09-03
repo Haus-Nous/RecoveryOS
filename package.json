@@ -1,0 +1,17 @@
+{
+  "name": "recoveryos-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RecoveryOS — Payment Reliability & Revenue Recovery Control Plane",
+  "scripts": {
+    "dev": "pnpm --filter @recoveryos/web dev",
+    "build": "pnpm --filter @recoveryos/web build",
+    "lint": "pnpm --filter @recoveryos/web lint",
+    "typecheck": "pnpm --filter @recoveryos/web typecheck",
+    "test": "pnpm --filter @recoveryos/web test"
+  },
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
