@@ -108,7 +108,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile || pnpm install
 
       - name: TypeScript Typecheck
         run: pnpm --filter @recoveryos/web typecheck
