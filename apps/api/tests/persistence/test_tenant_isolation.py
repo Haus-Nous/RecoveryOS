@@ -181,15 +181,16 @@ async def test_cross_merchant_foreign_key_protection(
 ) -> None:
     now = datetime.now(UTC)
 
-    # Seed merchant Alpha
+    # 1. Seed two distinct merchants: Alpha and Beta
     await db_session.execute(
         text(
             "INSERT INTO merchants (id, name, slug, created_at, updated_at) "
-            "VALUES ('merch_alpha_x', 'Alpha Corp', 'alpha-corp', :now, :now)"
+            "VALUES ('merch_alpha_x', 'Alpha Corp', 'alpha-corp', :now, :now), "
+            "       ('merch_beta_x', 'Beta Corp', 'beta-corp', :now, :now)"
         ),
         {"now": now},
     )
-    # Seed order belonging to Alpha
+    # Seed full valid hierarchy under Merchant Alpha
     await db_session.execute(
         text(
             "INSERT INTO orders (id, merchant_id, amount_minor, currency, status, created_at, updated_at, version) "
@@ -197,14 +198,83 @@ async def test_cross_merchant_foreign_key_protection(
         ),
         {"now": now},
     )
+    await db_session.execute(
+        text(
+            "INSERT INTO payments (id, merchant_id, order_id, amount_minor, currency, state, attempt_number, created_at, updated_at, version) "
+            "VALUES ('pay_alpha_1', 'merch_alpha_x', 'ord_alpha_1', 5000, 'INR', 'FAILED', 1, :now, :now, 1)"
+        ),
+        {"now": now},
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO recovery_cases (id, merchant_id, payment_id, amount_at_risk_minor, currency, state, opened_at, updated_at, attempt_count, version) "
+            "VALUES ('case_alpha_1', 'merch_alpha_x', 'pay_alpha_1', 5000, 'INR', 'APPROVED', :now, :now, 0, 1)"
+        ),
+        {"now": now},
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO recovery_actions (id, merchant_id, recovery_case_id, strategy, state, authorization_decision, attempt_number, created_at, updated_at, version) "
+            "VALUES ('act_alpha_1', 'merch_alpha_x', 'case_alpha_1', 'RETRY_SAME_METHOD', 'SUCCEEDED', 'ALLOW', 1, :now, :now, 1)"
+        ),
+        {"now": now},
+    )
     await db_session.commit()
 
-    # Attempt to insert payment for non-existent merchant Beta referencing Alpha's order -> must fail FK
+    # Case 1: Payment(Beta) -> Order(Alpha) MUST FAIL
     with pytest.raises(IntegrityError):
         await db_session.execute(
             text(
                 "INSERT INTO payments (id, merchant_id, order_id, amount_minor, currency, state, attempt_number, created_at, updated_at, version) "
-                "VALUES ('pay_beta_cross', 'merch_nonexistent', 'ord_alpha_1', 5000, 'INR', 'FAILED', 1, :now, :now, 1)"
+                "VALUES ('pay_beta_cross', 'merch_beta_x', 'ord_alpha_1', 5000, 'INR', 'FAILED', 1, :now, :now, 1)"
+            ),
+            {"now": now},
+        )
+        await db_session.flush()
+    await db_session.rollback()
+
+    # Case 2: RecoveryCase(Beta) -> Payment(Alpha) MUST FAIL
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text(
+                "INSERT INTO recovery_cases (id, merchant_id, payment_id, amount_at_risk_minor, currency, state, opened_at, updated_at, attempt_count, version) "
+                "VALUES ('case_beta_cross', 'merch_beta_x', 'pay_alpha_1', 5000, 'INR', 'OPEN', :now, :now, 0, 1)"
+            ),
+            {"now": now},
+        )
+        await db_session.flush()
+    await db_session.rollback()
+
+    # Case 3: RecoveryProposal(Beta) -> RecoveryCase(Alpha) MUST FAIL
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text(
+                "INSERT INTO recovery_proposals (id, merchant_id, recovery_case_id, strategy, rationale, confidence_bps, source, created_at) "
+                "VALUES ('prop_beta_cross', 'merch_beta_x', 'case_alpha_1', 'RETRY_SAME_METHOD', 'Cross prop', 8000, 'AI', :now)"
+            ),
+            {"now": now},
+        )
+        await db_session.flush()
+    await db_session.rollback()
+
+    # Case 4: RecoveryAction(Beta) -> RecoveryCase(Alpha) MUST FAIL
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text(
+                "INSERT INTO recovery_actions (id, merchant_id, recovery_case_id, strategy, state, authorization_decision, attempt_number, created_at, updated_at, version) "
+                "VALUES ('act_beta_cross', 'merch_beta_x', 'case_alpha_1', 'RETRY_SAME_METHOD', 'SUCCEEDED', 'ALLOW', 1, :now, :now, 1)"
+            ),
+            {"now": now},
+        )
+        await db_session.flush()
+    await db_session.rollback()
+
+    # Case 5: RecoveryOutcome(Beta) -> RecoveryAction(Alpha) / RecoveryCase(Alpha) MUST FAIL
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text(
+                "INSERT INTO recovery_outcomes (id, merchant_id, recovery_case_id, recovery_action_id, status, amount_recovered_minor, currency, observed_at, verification_status, verification_reference, verified_at) "
+                "VALUES ('out_beta_cross', 'merch_beta_x', 'case_alpha_1', 'act_alpha_1', 'RECOVERY_OBSERVED', 5000, 'INR', :now, 'VERIFIED', 'ref_1', :now)"
             ),
             {"now": now},
         )

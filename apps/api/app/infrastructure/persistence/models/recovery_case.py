@@ -8,9 +8,11 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +27,13 @@ class RecoveryCaseModel(Base):
         CheckConstraint("amount_at_risk_minor > 0", name="ck_recovery_cases_amount_positive"),
         CheckConstraint("length(currency) = 3", name="ck_recovery_cases_currency_iso3"),
         CheckConstraint("attempt_count >= 0", name="ck_recovery_cases_attempt_non_negative"),
+        UniqueConstraint("id", "merchant_id", name="uq_recovery_cases_id_merchant"),
+        ForeignKeyConstraint(
+            ["payment_id", "merchant_id"],
+            ["payments.id", "payments.merchant_id"],
+            name="fk_recovery_cases_payment_merchant",
+            ondelete="RESTRICT",
+        ),
         Index("ix_recovery_cases_merchant_state", "merchant_id", "state"),
         Index("ix_recovery_cases_merchant_opened_at", "merchant_id", "opened_at"),
         # Partial unique index: only ONE active case per payment
@@ -40,9 +49,7 @@ class RecoveryCaseModel(Base):
     merchant_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("merchants.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    payment_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("payments.id", ondelete="RESTRICT"), nullable=False, index=True
-    )
+    payment_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     amount_at_risk_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False)

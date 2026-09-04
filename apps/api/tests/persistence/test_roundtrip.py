@@ -380,7 +380,12 @@ async def test_domain_event_roundtrip(db_session: AsyncSession, seed_merchant: A
         aggregate_type="Payment",
         aggregate_id="pay_01JEVTPMT00000000000000000",
         occurred_at=now,
-        payload={"merchant_id": str(merchant_id), "amount_minor": 10000, "currency": "INR"},
+        payload={
+            "merchant_id": str(merchant_id),
+            "amount_minor": 10000,
+            "currency": "INR",
+            "nested_context": {"reason": "timeout", "tags": ["auth", "otp"]},
+        },
     )
 
     await event_repo.append(merchant_id, event)
@@ -388,6 +393,17 @@ async def test_domain_event_roundtrip(db_session: AsyncSession, seed_merchant: A
 
     events = await event_repo.list_by_aggregate("Payment", "pay_01JEVTPMT00000000000000000")
     assert len(events) == 1
-    assert events[0].event_id == event.event_id
-    assert events[0].event_type == "PaymentFailureDetected"
-    assert events[0].payload["amount_minor"] == 10000
+    rehydrated = events[0]
+    assert rehydrated.event_id == event.event_id
+    assert rehydrated.event_type == "PaymentFailureDetected"
+    assert rehydrated.aggregate_type == "Payment"
+    assert rehydrated.aggregate_id == "pay_01JEVTPMT00000000000000000"
+    assert rehydrated.payload["amount_minor"] == 10000
+    assert rehydrated.payload["nested_context"]["reason"] == "timeout"
+
+    # Verify recursive deep immutability on the rehydrated domain event
+    with pytest.raises(TypeError):
+        rehydrated.payload["amount_minor"] = 20000  # type: ignore[index]
+
+    with pytest.raises(TypeError):
+        rehydrated.payload["nested_context"]["reason"] = "fraud"

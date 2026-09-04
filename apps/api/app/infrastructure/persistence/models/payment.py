@@ -8,9 +8,11 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +27,13 @@ class PaymentModel(Base):
         CheckConstraint("amount_minor > 0", name="ck_payments_amount_positive"),
         CheckConstraint("length(currency) = 3", name="ck_payments_currency_iso3"),
         CheckConstraint("attempt_number >= 1", name="ck_payments_attempt_positive"),
+        UniqueConstraint("id", "merchant_id", name="uq_payments_id_merchant"),
+        ForeignKeyConstraint(
+            ["order_id", "merchant_id"],
+            ["orders.id", "orders.merchant_id"],
+            name="fk_payments_order_merchant",
+            ondelete="RESTRICT",
+        ),
         Index("ix_payments_merchant_order", "merchant_id", "order_id"),
         Index("ix_payments_merchant_state", "merchant_id", "state"),
         Index("ix_payments_merchant_created_at", "merchant_id", "created_at"),
@@ -34,9 +43,7 @@ class PaymentModel(Base):
     merchant_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("merchants.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    order_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("orders.id", ondelete="RESTRICT"), nullable=False, index=True
-    )
+    order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False)

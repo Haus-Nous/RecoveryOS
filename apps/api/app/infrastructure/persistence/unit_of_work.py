@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.application.ports.unit_of_work import UnitOfWork
 from app.domain.events.base import DomainEvent
 from app.domain.types import MerchantId
+from app.infrastructure.persistence.mappers.domain_event_mapper import unfreeze_payload
 from app.infrastructure.persistence.models.outbox import OutboxMessageModel
 from app.infrastructure.persistence.repositories.domain_event_repo import (
     SqlAlchemyDomainEventRepository,
@@ -89,7 +90,7 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
                 event_id=str(event.event_id),
                 merchant_id=str(merchant_id) if merchant_id else None,
                 event_type=event.event_type,
-                payload=dict(event.payload),
+                payload=unfreeze_payload(event.payload),
                 occurred_at=event.occurred_at,
                 created_at=datetime.now(UTC),
                 published_at=None,

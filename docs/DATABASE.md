@@ -16,7 +16,7 @@ PostgreSQL stores that truth. SQLAlchemy adapts to the domain; the domain never 
 
 ## 1. Relational Schema & Tables
 
-All primary keys use standard UUIDv4 identifiers (`uuid_pkg.UUID`). Monetary amounts are strictly stored as 64-bit integers (`BigInteger`) representing minor units (e.g., paisa / cents) — floating-point numbers are prohibited across the entire schema.
+All primary keys use string identifiers (`String(64)` / UUIDs). Monetary amounts are strictly stored as 64-bit integers (`BigInteger`) representing minor units (e.g., paisa / cents) — floating-point numbers are prohibited across the entire schema.
 
 ```mermaid
 erDiagram
@@ -38,74 +38,92 @@ erDiagram
     RECOVERY_ACTIONS ||--o| RECOVERY_OUTCOMES : "yields"
 ```
 
-### Table Inventory
+### Table Inventory (10 Tables)
 
-1. **`merchants`**: Registered merchant accounts.
-2. **`orders`**: Commercial checkout orders. Tracks `amount_minor`, `currency`, `status`, and `version`.
-3. **`payments`**: Payment attempts against orders. Tracks `amount_minor`, `currency`, `state`, failure reason, provider references, and `version`.
-4. **`recovery_cases`**: Core revenue-recovery lifecycle aggregate for failed payments. Tracks `state`, target amounts, recovered amounts, and `version`.
-5. **`recovery_proposals`**: AI/Rule-generated recovery strategy proposals with confidence score in basis points (0..10000 bps) and risk scores.
-6. **`policies`**: Deterministic merchant guardrail and authorization rule definitions.
-7. **`recovery_actions`**: Authorized actionable recovery executions (nudges, links, retries). Tracks `state`, execution timestamps, provider references, and `version`.
-8. **`recovery_outcomes`**: Verified financial reconciliation outcomes with mandatory evidence references.
-9. **`domain_events`**: Append-only audit log of all domain events emitted during state transitions.
-10. **`outbox_messages`**: Transactional outbox table for reliable at-least-once message delivery to downstream consumers/workers.
+1. **`merchants`**: Tenant entity model representing merchant boundaries (`id`, `name`, `slug`, `created_at`, `updated_at`).
+2. **`orders`**: Commercial checkout orders (`id`, `merchant_id`, `amount_minor`, `currency`, `status`, `external_reference`, `created_at`, `updated_at`, `version`).
+3. **`payments`**: Payment attempts against orders (`id`, `merchant_id`, `order_id`, `amount_minor`, `currency`, `state`, `attempt_number`, `provider_reference`, failure context fields, `created_at`, `updated_at`, `version`).
+4. **`recovery_cases`**: Recovery case aggregate (`id`, `merchant_id`, `payment_id`, `amount_at_risk_minor`, `currency`, `state`, `opened_at`, `updated_at`, `attempt_count`, `terminal_reason`, failure context fields, `version`).
+5. **`recovery_proposals`**: Advisory diagnostic proposals (`id`, `merchant_id`, `recovery_case_id`, `strategy`, `rationale`, `confidence_bps`, `source`, `created_at`).
+6. **`policies`**: Merchant authorization guardrails (`id`, `merchant_id`, `enabled`, `max_retry_attempts`, `cooldown_seconds`, `auto_action_amount_limit_minor`, `review_required_above_minor`, `currency`, `allowed_strategies`, `created_at`, `updated_at`, `version`).
+7. **`recovery_actions`**: Authorized actionable recovery executions (`id`, `merchant_id`, `recovery_case_id`, `strategy`, `state`, `authorization_decision`, `authorization_reference`, `attempt_number`, `failure_reason`, `created_at`, `updated_at`, `version`).
+8. **`recovery_outcomes`**: Observed recovery outcomes and verification state (`id`, `merchant_id`, `recovery_case_id`, `recovery_action_id`, `status`, `amount_recovered_minor`, `currency`, `observed_at`, `verification_status`, `verification_reference`, `verified_at`).
+9. **`domain_events`**: Append-only transactional audit log of immutable domain events (`event_id`, `merchant_id`, `aggregate_type`, `aggregate_id`, `event_type`, `occurred_at`, `payload`, `recorded_at`).
+10. **`outbox_messages`**: Transactional outbox persistence foundation for asynchronous message dispatching (`id`, `event_id`, `merchant_id`, `event_type`, `payload`, `occurred_at`, `created_at`, `published_at`, `attempt_count`).
 
 ---
 
-## 2. Multi-Tenant Merchant Isolation
+## 2. Multi-Tenant Merchant Isolation & Structural DB Integrity
 
-Every operational table includes a non-nullable `merchant_id UUID NOT NULL REFERENCES merchants(id) ON DELETE RESTRICT`.
+Every operational table contains a non-nullable `merchant_id`.
 
-- **Repository Scoping**: Every repository query filters explicitly by `merchant_id` in addition to entity `id`.
-- **Database-Level Defense**: Foreign key relationships on merchant-owned entities use composite constraints or direct merchant verification to prevent cross-tenant entity linkage.
-- **Partial Unique Indexes**: Enforce tenant-scoped uniqueness (e.g., only one active recovery case per payment per merchant).
+- **Repository Scoping**: Every repository interface and query requires an explicit `merchant_id` filter.
+- **Physical Database Enforcement**: Multi-tenant relational integrity is structurally enforced via composite unique constraints and composite foreign keys:
+  - `payments(order_id, merchant_id) -> orders(id, merchant_id)`
+  - `recovery_cases(payment_id, merchant_id) -> payments(id, merchant_id)`
+  - `recovery_proposals(recovery_case_id, merchant_id) -> recovery_cases(id, merchant_id)`
+  - `recovery_actions(recovery_case_id, merchant_id) -> recovery_cases(id, merchant_id)`
+  - `recovery_outcomes(recovery_case_id, merchant_id) -> recovery_cases(id, merchant_id)`
+  - `recovery_outcomes(recovery_action_id, merchant_id) -> recovery_actions(id, merchant_id)`
+- Any direct SQL attempt to create cross-tenant relationships (e.g. linking Merchant B's payment to Merchant A's order) is rejected immediately at the PostgreSQL foreign key level.
 
 ---
 
 ## 3. Financial Integrity & Database-Level Constraints
 
-To provide defense-in-depth against invalid data states, PostgreSQL CHECK constraints are enforced on all critical columns:
+Defense-in-depth CHECK constraints are enforced on all financial tables:
 
 | Entity | Constraint | Description |
 | :--- | :--- | :--- |
 | **`orders`** | `ck_orders_amount_positive` | `amount_minor > 0` |
 | **`payments`** | `ck_payments_amount_positive` | `amount_minor > 0` |
-| **`recovery_cases`** | `ck_cases_amount_positive` | `amount_minor > 0` |
-| **`recovery_proposals`** | `ck_proposals_confidence_bps` | `confidence_bps >= 0 AND confidence_bps <= 10000` |
-| **`recovery_proposals`** | `ck_proposals_risk_score` | `risk_score >= 0.0 AND risk_score <= 1.0` |
-| **`policies`** | `ck_policies_max_discount_bps` | `max_discount_bps >= 0 AND max_discount_bps <= 10000` |
-| **`policies`** | `ck_policies_min_confidence_bps` | `min_confidence_bps >= 0 AND min_confidence_bps <= 10000` |
-| **`recovery_actions`** | `ck_actions_execution_attempt` | `execution_attempt >= 0` |
-| **`recovery_outcomes`** | `ck_outcomes_recovered_non_negative` | `recovered_amount_minor >= 0` |
-| **`recovery_outcomes`** | `ck_outcomes_verified_requires_evidence` | Enforces that `VERIFIED` outcomes have non-empty `evidence_reference` and `verified_at`. |
+| **`payments`** | `ck_payments_attempt_positive` | `attempt_number >= 1` |
+| **`recovery_cases`** | `ck_recovery_cases_amount_positive` | `amount_at_risk_minor > 0` |
+| **`recovery_cases`** | `ck_recovery_cases_attempt_non_negative` | `attempt_count >= 0` |
+| **`recovery_cases`** | `uq_active_recovery_case_per_payment` | Partial unique index on `payment_id` for non-terminal states |
+| **`recovery_proposals`** | `ck_recovery_proposals_confidence_bps_range` | `confidence_bps >= 0 AND confidence_bps <= 10000` |
+| **`policies`** | `ck_policies_max_retries_non_negative` | `max_retry_attempts >= 0` |
+| **`policies`** | `ck_policies_cooldown_non_negative` | `cooldown_seconds >= 0` |
+| **`policies`** | `ck_policies_auto_limit_non_negative` | `auto_action_amount_limit_minor >= 0` |
+| **`policies`** | `ck_policies_review_limit_non_negative` | `review_required_above_minor >= 0` |
+| **`policies`** | `ck_policies_auto_limit_le_review_limit` | `auto_action_amount_limit_minor <= review_required_above_minor` |
+| **`recovery_actions`** | `ck_recovery_actions_attempt_positive` | `attempt_number >= 1` |
+| **`recovery_actions`** | `ck_recovery_actions_executable_must_be_allowed` | Executable states (`QUEUED`, `EXECUTING`) strictly require `COALESCE(authorization_decision, '') = 'ALLOW'` |
+| **`recovery_outcomes`** | `ck_recovery_outcomes_amount_non_negative` | `amount_recovered_minor >= 0` |
+| **`recovery_outcomes`** | `ck_recovery_outcomes_verified_requires_evidence` | `VERIFIED` status strictly requires `verification_reference IS NOT NULL`, `verified_at IS NOT NULL`, and `status = 'RECOVERY_OBSERVED'` |
 
 ---
 
-## 4. Optimistic Concurrency Control (OCC)
+## 4. Single Source of Truth for Recovered Revenue
 
-Mutable financial aggregates (`orders`, `payments`, `recovery_cases`, `recovery_actions`) use an integer `version` column:
-
-1. When an aggregate is loaded, its current `version` is read.
-2. During persistence updates, the SQL query executes an atomic conditional update:
-   ```sql
-   UPDATE table_name
-   SET ..., version = version + 1
-   WHERE id = :id AND merchant_id = :merchant_id AND version = :current_version;
-   ```
-3. If `cursor.rowcount == 0`, a concurrent modification occurred. The repository immediately raises a `ConcurrencyError`.
+RecoveryOS strictly distinguishes:
+```
+ACTION SUCCESS != RECOVERY OBSERVED != VERIFIED RECOVERED REVENUE
+```
+- `recovery_cases` stores `amount_at_risk_minor` (target amount lost).
+- `recovery_outcomes` is the **sole authoritative source of truth** for observed and verified recovered revenue (`amount_recovered_minor`, `verification_status`, `verification_reference`, `verified_at`).
+- No duplicate recovered revenue amounts are maintained on `recovery_cases`.
 
 ---
 
-## 5. Unit of Work & Transactional Outbox
+## 5. Optimistic Concurrency Control (OCC)
 
-The Unit of Work pattern (`apps/api/app/infrastructure/persistence/unit_of_work.py`) guarantees atomic business transactions:
+Mutable financial aggregates (`orders`, `payments`, `recovery_cases`, `recovery_actions`, `policies`) use an integer `version` column:
+
+1. Aggregate is loaded with its current `version`.
+2. Repositories update with conditional predicate `WHERE id = :id AND merchant_id = :merchant_id AND version = :current_version`.
+3. If concurrent modification occurs (`rowcount == 0`), an explicit `ConcurrencyError` is raised.
+
+---
+
+## 6. Unit of Work & Transactional Outbox Foundation
+
+The Unit of Work pattern (`apps/api/app/infrastructure/persistence/unit_of_work.py`) manages transactions and event persistence:
 
 1. **Transaction Lifecycle**:
-   - Manages an async SQLAlchemy session.
-   - Automatically rolls back on uncaught exceptions.
-   - Repositories do **not** auto-commit.
-2. **Atomic Outbox & Audit**:
-   - As domain aggregates perform operations, they emit domain events.
-   - The Unit of Work collects these events and persists them to both `domain_events` (immutable audit log) and `outbox_messages` (pending dispatch) within the **exact same database transaction** as the aggregate state changes.
-   - Ensures zero event loss and eliminates distributed two-phase commit overhead.
+   - Commits are owned exclusively by `UnitOfWork.commit()`.
+   - Repositories contain zero commit calls.
+   - Exceptions trigger automatic rollback.
+2. **Transactional Outbox Foundation**:
+   - Domain events tracked during the transaction are written to both `domain_events` (immutable audit log) and `outbox_messages` (pending dispatch table) in the **exact same database transaction** as the aggregate mutations.
+   - Note: Phase 2 establishes the **persistence foundation** for outbox storage. Outbox workers, queue dispatchers, and external consumers belong to subsequent phases.

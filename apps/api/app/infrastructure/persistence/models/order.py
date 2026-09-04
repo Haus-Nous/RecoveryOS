@@ -2,7 +2,16 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.persistence.models.base import Base
@@ -15,6 +24,7 @@ class OrderModel(Base):
     __table_args__ = (
         CheckConstraint("amount_minor > 0", name="ck_orders_amount_positive"),
         CheckConstraint("length(currency) = 3", name="ck_orders_currency_iso3"),
+        UniqueConstraint("id", "merchant_id", name="uq_orders_id_merchant"),
         Index("ix_orders_merchant_status", "merchant_id", "status"),
         Index("ix_orders_merchant_created_at", "merchant_id", "created_at"),
     )

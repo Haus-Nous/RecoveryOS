@@ -1,11 +1,21 @@
-"""Bi-directional mapper for DomainEvent domain entity and DomainEventModel."""
-
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from types import MappingProxyType
+from typing import Any
 
 from app.application.exceptions import DataCorruptionError
 from app.domain.events.base import DomainEvent
 from app.domain.types import DomainEventId
 from app.infrastructure.persistence.models.domain_event import DomainEventModel
+
+
+def unfreeze_payload(data: Any) -> Any:
+    """Recursively convert mappingproxy, tuple, set, frozenset to dict/list for JSON serialization."""
+    if isinstance(data, (Mapping, MappingProxyType)):
+        return {str(k): unfreeze_payload(v) for k, v in data.items()}
+    if isinstance(data, (list, tuple, set, frozenset)):
+        return [unfreeze_payload(v) for v in data]
+    return data
 
 
 class DomainEventMapper:
@@ -48,6 +58,6 @@ class DomainEventMapper:
             aggregate_id=domain.aggregate_id,
             event_type=domain.event_type,
             occurred_at=domain.occurred_at,
-            payload=dict(domain.payload),
+            payload=unfreeze_payload(domain.payload),
             recorded_at=rec_at,
         )

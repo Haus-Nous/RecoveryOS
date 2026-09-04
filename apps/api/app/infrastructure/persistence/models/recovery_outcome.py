@@ -2,7 +2,15 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, String
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.persistence.models.base import Base
@@ -31,6 +39,18 @@ class RecoveryOutcomeModel(Base):
             "AND status = 'RECOVERY_OBSERVED')",
             name="ck_recovery_outcomes_verified_requires_evidence",
         ),
+        ForeignKeyConstraint(
+            ["recovery_case_id", "merchant_id"],
+            ["recovery_cases.id", "recovery_cases.merchant_id"],
+            name="fk_recovery_outcomes_case_merchant",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["recovery_action_id", "merchant_id"],
+            ["recovery_actions.id", "recovery_actions.merchant_id"],
+            name="fk_recovery_outcomes_action_merchant",
+            ondelete="CASCADE",
+        ),
         Index("ix_recovery_outcomes_merchant_case", "merchant_id", "recovery_case_id"),
         Index("ix_recovery_outcomes_merchant_status", "merchant_id", "status"),
         Index("ix_recovery_outcomes_merchant_verification", "merchant_id", "verification_status"),
@@ -41,15 +61,11 @@ class RecoveryOutcomeModel(Base):
     merchant_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("merchants.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    recovery_case_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("recovery_cases.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    recovery_case_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     recovery_action_id: Mapped[str] = mapped_column(
         String(64),
-        ForeignKey("recovery_actions.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
-        index=True,
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     amount_recovered_minor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

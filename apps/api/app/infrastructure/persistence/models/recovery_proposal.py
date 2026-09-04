@@ -2,7 +2,16 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.persistence.models.base import Base
@@ -20,6 +29,12 @@ class RecoveryProposalModel(Base):
             "confidence_bps >= 0 AND confidence_bps <= 10000",
             name="ck_recovery_proposals_confidence_bps_range",
         ),
+        ForeignKeyConstraint(
+            ["recovery_case_id", "merchant_id"],
+            ["recovery_cases.id", "recovery_cases.merchant_id"],
+            name="fk_recovery_proposals_case_merchant",
+            ondelete="CASCADE",
+        ),
         Index("ix_recovery_proposals_merchant_case", "merchant_id", "recovery_case_id"),
         Index("ix_recovery_proposals_merchant_created_at", "merchant_id", "created_at"),
     )
@@ -28,9 +43,7 @@ class RecoveryProposalModel(Base):
     merchant_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("merchants.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    recovery_case_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("recovery_cases.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    recovery_case_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     strategy: Mapped[str] = mapped_column(String(64), nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     confidence_bps: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -45,7 +45,6 @@ class PolicyModel(Base):
         ForeignKey("merchants.id", ondelete="RESTRICT"),
         unique=True,
         nullable=False,
-        index=True,
     )
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     max_retry_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)

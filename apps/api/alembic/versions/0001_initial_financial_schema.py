@@ -51,6 +51,7 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
         sa.CheckConstraint("amount_minor > 0", name="ck_orders_amount_positive"),
         sa.CheckConstraint("length(currency) = 3", name="ck_orders_currency_iso3"),
+        sa.UniqueConstraint("id", "merchant_id", name="uq_orders_id_merchant"),
     )
     op.create_index("ix_orders_merchant_id", "orders", ["merchant_id"])
     op.create_index("ix_orders_merchant_status", "orders", ["merchant_id", "status"])
@@ -66,12 +67,7 @@ def upgrade() -> None:
             sa.ForeignKey("merchants.id", ondelete="RESTRICT"),
             nullable=False,
         ),
-        sa.Column(
-            "order_id",
-            sa.String(length=64),
-            sa.ForeignKey("orders.id", ondelete="RESTRICT"),
-            nullable=False,
-        ),
+        sa.Column("order_id", sa.String(length=64), nullable=False),
         sa.Column("amount_minor", sa.BigInteger(), nullable=False),
         sa.Column("currency", sa.String(length=3), nullable=False),
         sa.Column("state", sa.String(length=32), nullable=False),
@@ -88,6 +84,13 @@ def upgrade() -> None:
         sa.CheckConstraint("amount_minor > 0", name="ck_payments_amount_positive"),
         sa.CheckConstraint("length(currency) = 3", name="ck_payments_currency_iso3"),
         sa.CheckConstraint("attempt_number >= 1", name="ck_payments_attempt_positive"),
+        sa.UniqueConstraint("id", "merchant_id", name="uq_payments_id_merchant"),
+        sa.ForeignKeyConstraint(
+            ["order_id", "merchant_id"],
+            ["orders.id", "orders.merchant_id"],
+            name="fk_payments_order_merchant",
+            ondelete="RESTRICT",
+        ),
     )
     op.create_index("ix_payments_merchant_id", "payments", ["merchant_id"])
     op.create_index("ix_payments_order_id", "payments", ["order_id"])
@@ -105,12 +108,7 @@ def upgrade() -> None:
             sa.ForeignKey("merchants.id", ondelete="RESTRICT"),
             nullable=False,
         ),
-        sa.Column(
-            "payment_id",
-            sa.String(length=64),
-            sa.ForeignKey("payments.id", ondelete="RESTRICT"),
-            nullable=False,
-        ),
+        sa.Column("payment_id", sa.String(length=64), nullable=False),
         sa.Column("amount_at_risk_minor", sa.BigInteger(), nullable=False),
         sa.Column("currency", sa.String(length=3), nullable=False),
         sa.Column("state", sa.String(length=32), nullable=False),
@@ -127,6 +125,13 @@ def upgrade() -> None:
         sa.CheckConstraint("amount_at_risk_minor > 0", name="ck_recovery_cases_amount_positive"),
         sa.CheckConstraint("length(currency) = 3", name="ck_recovery_cases_currency_iso3"),
         sa.CheckConstraint("attempt_count >= 0", name="ck_recovery_cases_attempt_non_negative"),
+        sa.UniqueConstraint("id", "merchant_id", name="uq_recovery_cases_id_merchant"),
+        sa.ForeignKeyConstraint(
+            ["payment_id", "merchant_id"],
+            ["payments.id", "payments.merchant_id"],
+            name="fk_recovery_cases_payment_merchant",
+            ondelete="RESTRICT",
+        ),
     )
     op.create_index("ix_recovery_cases_merchant_id", "recovery_cases", ["merchant_id"])
     op.create_index("ix_recovery_cases_payment_id", "recovery_cases", ["payment_id"])
@@ -152,12 +157,7 @@ def upgrade() -> None:
             sa.ForeignKey("merchants.id", ondelete="RESTRICT"),
             nullable=False,
         ),
-        sa.Column(
-            "recovery_case_id",
-            sa.String(length=64),
-            sa.ForeignKey("recovery_cases.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
+        sa.Column("recovery_case_id", sa.String(length=64), nullable=False),
         sa.Column("strategy", sa.String(length=64), nullable=False),
         sa.Column("rationale", sa.Text(), nullable=False),
         sa.Column("confidence_bps", sa.Integer(), nullable=False),
@@ -166,6 +166,12 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "confidence_bps >= 0 AND confidence_bps <= 10000",
             name="ck_recovery_proposals_confidence_bps_range",
+        ),
+        sa.ForeignKeyConstraint(
+            ["recovery_case_id", "merchant_id"],
+            ["recovery_cases.id", "recovery_cases.merchant_id"],
+            name="fk_recovery_proposals_case_merchant",
+            ondelete="CASCADE",
         ),
     )
     op.create_index("ix_recovery_proposals_merchant_id", "recovery_proposals", ["merchant_id"])
@@ -218,7 +224,6 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("length(currency) = 3", name="ck_policies_currency_iso3"),
     )
-    op.create_index("ix_policies_merchant_id", "policies", ["merchant_id"])
     op.create_index("ix_policies_merchant_enabled", "policies", ["merchant_id", "enabled"])
 
     # 7. recovery_actions
@@ -231,12 +236,7 @@ def upgrade() -> None:
             sa.ForeignKey("merchants.id", ondelete="RESTRICT"),
             nullable=False,
         ),
-        sa.Column(
-            "recovery_case_id",
-            sa.String(length=64),
-            sa.ForeignKey("recovery_cases.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
+        sa.Column("recovery_case_id", sa.String(length=64), nullable=False),
         sa.Column("strategy", sa.String(length=64), nullable=False),
         sa.Column("state", sa.String(length=32), nullable=False),
         sa.Column("authorization_decision", sa.String(length=32), nullable=True),
@@ -248,8 +248,15 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
         sa.CheckConstraint("attempt_number >= 1", name="ck_recovery_actions_attempt_positive"),
         sa.CheckConstraint(
-            "(state NOT IN ('QUEUED', 'EXECUTING')) OR (authorization_decision = 'ALLOW')",
+            "(state NOT IN ('QUEUED', 'EXECUTING')) OR (COALESCE(authorization_decision, '') = 'ALLOW')",
             name="ck_recovery_actions_executable_must_be_allowed",
+        ),
+        sa.UniqueConstraint("id", "merchant_id", name="uq_recovery_actions_id_merchant"),
+        sa.ForeignKeyConstraint(
+            ["recovery_case_id", "merchant_id"],
+            ["recovery_cases.id", "recovery_cases.merchant_id"],
+            name="fk_recovery_actions_case_merchant",
+            ondelete="CASCADE",
         ),
     )
     op.create_index("ix_recovery_actions_merchant_id", "recovery_actions", ["merchant_id"])
@@ -276,19 +283,8 @@ def upgrade() -> None:
             sa.ForeignKey("merchants.id", ondelete="RESTRICT"),
             nullable=False,
         ),
-        sa.Column(
-            "recovery_case_id",
-            sa.String(length=64),
-            sa.ForeignKey("recovery_cases.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "recovery_action_id",
-            sa.String(length=64),
-            sa.ForeignKey("recovery_actions.id", ondelete="CASCADE"),
-            unique=True,
-            nullable=False,
-        ),
+        sa.Column("recovery_case_id", sa.String(length=64), nullable=False),
+        sa.Column("recovery_action_id", sa.String(length=64), unique=True, nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("amount_recovered_minor", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("currency", sa.String(length=3), nullable=False),
@@ -306,13 +302,22 @@ def upgrade() -> None:
             "(verification_status != 'VERIFIED') OR (verification_reference IS NOT NULL AND verified_at IS NOT NULL AND status = 'RECOVERY_OBSERVED')",
             name="ck_recovery_outcomes_verified_requires_evidence",
         ),
+        sa.ForeignKeyConstraint(
+            ["recovery_case_id", "merchant_id"],
+            ["recovery_cases.id", "recovery_cases.merchant_id"],
+            name="fk_recovery_outcomes_case_merchant",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["recovery_action_id", "merchant_id"],
+            ["recovery_actions.id", "recovery_actions.merchant_id"],
+            name="fk_recovery_outcomes_action_merchant",
+            ondelete="CASCADE",
+        ),
     )
     op.create_index("ix_recovery_outcomes_merchant_id", "recovery_outcomes", ["merchant_id"])
     op.create_index(
         "ix_recovery_outcomes_recovery_case_id", "recovery_outcomes", ["recovery_case_id"]
-    )
-    op.create_index(
-        "ix_recovery_outcomes_recovery_action_id", "recovery_outcomes", ["recovery_action_id"]
     )
     op.create_index(
         "ix_recovery_outcomes_merchant_case",
