@@ -12,6 +12,7 @@ from app.domain.entities.order import (
 )
 from app.domain.exceptions import (
     InvalidStateTransitionError,
+    InvariantViolationError,
     TerminalStateError,
 )
 from app.domain.types import MerchantId, OrderId
@@ -73,12 +74,23 @@ class TestOrderStateMachine:
         with pytest.raises(TerminalStateError):
             order.transition_to(OrderStatus.OPEN, NOW)
 
+    def test_order_amount_must_be_positive(self) -> None:
+        with pytest.raises(InvariantViolationError):
+            Order(
+                id=OrderId("ord_123"),
+                merchant_id=MerchantId("mer_abc"),
+                amount=Money.zero(Currency.INR),
+                status=OrderStatus.CREATED,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+
     @pytest.mark.parametrize("from_status", list(OrderStatus))
     @pytest.mark.parametrize("to_status", list(OrderStatus))
     def test_complete_order_transition_matrix(
         self, from_status: OrderStatus, to_status: OrderStatus
     ) -> None:
-        """Exhaustively test all N x N state transition pairs for Order."""
+        """Exhaustively test all 4 x 4 = 16 state transition pairs for Order."""
         order = create_order(from_status)
         is_allowed = to_status in ALLOWED_ORDER_TRANSITIONS[from_status]
 

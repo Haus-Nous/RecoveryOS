@@ -15,7 +15,7 @@ stateDiagram-v2
     OPEN --> CANCELLED : cancel() [Terminal]
 ```
 
-### Order Transition Matrix
+### Order Transition Matrix (4 states, 16 pairs)
 | From State | Allowed Target States | Terminal? |
 | :--- | :--- | :---: |
 | `CREATED` | `OPEN`, `CANCELLED` | No |
@@ -52,9 +52,13 @@ stateDiagram-v2
     PARTIALLY_REFUNDED --> REFUNDED : refund(is_partial=False) [Terminal]
 ```
 
+### Payment Transition Matrix (8 states, 64 pairs)
+- Terminal states: `FAILED`, `CANCELLED`, `REFUNDED`.
+- Invariants: `CAPTURED` clears active failure context; transition to `FAILED` attaches `PaymentFailure`.
+
 ---
 
-## 3. RecoveryCase State Machine
+## 3. RecoveryCase State Machine & Verification Lifecycle
 
 ```mermaid
 stateDiagram-v2
@@ -78,16 +82,36 @@ stateDiagram-v2
     APPROVED --> EXECUTING : execute action
     APPROVED --> CANCELLED : cancel() [Terminal]
 
-    EXECUTING --> RECOVERED : funds recaptured [Terminal]
-    EXECUTING --> DIAGNOSING : retry attempt failed
+    EXECUTING --> RECOVERY_OBSERVED : payment recaptured
+    EXECUTING --> DIAGNOSING : retry failed / re-diagnose
     EXECUTING --> PLANNED : re-plan strategy
     EXECUTING --> EXHAUSTED : attempts exhausted [Terminal]
     EXECUTING --> ESCALATED : technical escalation
 
-    ESCALATED --> PLANNED : manual remediation
-    ESCALATED --> EXHAUSTED : closed unrecovered [Terminal]
+    RECOVERY_OBSERVED --> AWAITING_VERIFICATION : queue settlement check
+    RECOVERY_OBSERVED --> VERIFIED_RECOVERED : immediate ledger proof [Terminal]
+    RECOVERY_OBSERVED --> VERIFICATION_FAILED : settlement discrepancy
+    RECOVERY_OBSERVED --> CANCELLED : cancelled [Terminal]
+
+    AWAITING_VERIFICATION --> VERIFIED_RECOVERED : settlement verified [Terminal]
+    AWAITING_VERIFICATION --> VERIFICATION_FAILED : settlement rejected / chargeback
+    AWAITING_VERIFICATION --> CANCELLED : cancelled [Terminal]
+
+    VERIFICATION_FAILED --> ESCALATED : escalate for investigation
+    VERIFICATION_FAILED --> DIAGNOSING : re-diagnose alternative recovery
+    VERIFICATION_FAILED --> PLANNED : re-plan alternative action
+    VERIFICATION_FAILED --> EXHAUSTED : write off [Terminal]
+    VERIFICATION_FAILED --> CANCELLED : cancel [Terminal]
+
+    ESCALATED --> PLANNED : manual plan approved
+    ESCALATED --> DIAGNOSING : manual diagnosis
+    ESCALATED --> EXHAUSTED : operator closed unrecovered [Terminal]
     ESCALATED --> CANCELLED : cancelled [Terminal]
 ```
+
+### RecoveryCase Transition Matrix (13 states, 169 pairs)
+- Terminal states: `VERIFIED_RECOVERED`, `EXHAUSTED`, `CANCELLED`.
+- Verification failure handling: `VERIFICATION_FAILED` allows re-diagnosing, planning alternative strategies, escalating to operators, or marking exhausted.
 
 ---
 
@@ -117,5 +141,6 @@ stateDiagram-v2
     EXECUTING --> CANCELLED : cancelled [Terminal]
 ```
 
-### Authorization Invariant
-An action **cannot** transition to `QUEUED` or `EXECUTING` without explicit authorization (`authorization_decision == PolicyDecision.ALLOW`). Attempting to bypass authorization raises `UnauthorizedActionTransitionError`.
+### RecoveryAction Transition Matrix (9 states, 81 pairs)
+- Terminal states: `DENIED`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
+- **Authorization Guardrail Invariant**: An action **cannot** be initialized in or transition to `QUEUED` or `EXECUTING` without explicit authorization (`authorization_decision == PolicyDecision.ALLOW`). Attempting to bypass authorization raises `UnauthorizedActionTransitionError`.

@@ -1,4 +1,4 @@
-"""Tests for RecoveryCase aggregate and transition matrix."""
+"""Tests for RecoveryCase aggregate and full 13-state verification lifecycle matrix."""
 
 from datetime import UTC, datetime
 
@@ -35,21 +35,63 @@ def create_case(state: RecoveryCaseState = RecoveryCaseState.OPEN) -> RecoveryCa
 
 
 class TestRecoveryCaseStateMachine:
-    def test_full_recovery_lifecycle(self) -> None:
+    def test_full_verified_recovery_lifecycle(self) -> None:
+        """Full happy path through observed recovery and ledger verification."""
         case = create_case(RecoveryCaseState.OPEN)
+        assert not case.is_terminal
+
         case.transition_to(RecoveryCaseState.DIAGNOSING, NOW)
         case.transition_to(RecoveryCaseState.PLANNED, NOW)
         case.transition_to(RecoveryCaseState.APPROVED, NOW)
         case.transition_to(RecoveryCaseState.EXECUTING, NOW)
-        case.transition_to(
-            RecoveryCaseState.RECOVERED,
-            NOW,
-            reason="Payment successfully recaptured",
-        )
 
-        assert case.state == RecoveryCaseState.RECOVERED
+        # Recovery observed from gateway/customer action
+        case.transition_to(RecoveryCaseState.RECOVERY_OBSERVED, NOW)
+        assert not case.is_terminal
+
+        # Queued for settlement/ledger verification
+        case.transition_to(RecoveryCaseState.AWAITING_VERIFICATION, NOW)
+        assert not case.is_terminal
+
+        # Verified by ledger reconciliation
+        case.transition_to(
+            RecoveryCaseState.VERIFIED_RECOVERED,
+            NOW,
+            reason="Settlement batch matched payout evidence",
+        )
+        assert case.state == RecoveryCaseState.VERIFIED_RECOVERED
         assert case.is_terminal
-        assert case.terminal_reason == "Payment successfully recaptured"
+        assert case.terminal_reason == "Settlement batch matched payout evidence"
+
+    def test_verification_failure_and_remediation_cycle(self) -> None:
+        """Lifecycle handling verification failure and re-diagnosis."""
+        case1 = create_case(RecoveryCaseState.RECOVERY_OBSERVED)
+        case1.transition_to(RecoveryCaseState.AWAITING_VERIFICATION, NOW)
+
+        # Settlement verification failed
+        case1.transition_to(
+            RecoveryCaseState.VERIFICATION_FAILED,
+            NOW,
+            reason="Settlement amount discrepancy detected",
+        )
+        assert case1.state == RecoveryCaseState.VERIFICATION_FAILED
+        assert not case1.is_terminal
+
+        # Re-diagnose or escalate from failure
+        case2 = create_case(RecoveryCaseState.VERIFICATION_FAILED)
+        case2.transition_to(RecoveryCaseState.DIAGNOSING, NOW)
+        assert case2.state == RecoveryCaseState.DIAGNOSING
+
+    def test_verification_failure_and_escalation_cycle(self) -> None:
+        """Lifecycle handling verification failure: VERIFICATION_FAILED -> ESCALATED."""
+        case = create_case(RecoveryCaseState.VERIFICATION_FAILED)
+        case.transition_to(
+            RecoveryCaseState.ESCALATED,
+            NOW,
+            reason="Manual operator review required",
+        )
+        assert case.state == RecoveryCaseState.ESCALATED
+        assert not case.is_terminal
 
     def test_exhausted_lifecycle(self) -> None:
         case = create_case(RecoveryCaseState.OPEN)
@@ -59,7 +101,7 @@ class TestRecoveryCaseStateMachine:
         assert case.is_terminal
 
     def test_terminal_case_rejects_reopen(self) -> None:
-        case = create_case(RecoveryCaseState.RECOVERED)
+        case = create_case(RecoveryCaseState.VERIFIED_RECOVERED)
         with pytest.raises(TerminalStateError):
             case.transition_to(RecoveryCaseState.OPEN, NOW)
 
@@ -83,6 +125,7 @@ class TestRecoveryCaseStateMachine:
     def test_complete_case_transition_matrix(
         self, from_state: RecoveryCaseState, to_state: RecoveryCaseState
     ) -> None:
+        """Exhaustively verify all 13 x 13 = 169 RecoveryCase state transition pairs."""
         case = create_case(from_state)
         is_allowed = to_state in ALLOWED_CASE_TRANSITIONS[from_state]
 

@@ -22,12 +22,21 @@ from app.domain.values.decision import PolicyDecision
 NOW = datetime(2026, 9, 4, 12, 0, 0, tzinfo=UTC)
 
 
-def create_action(state: RecoveryActionState = RecoveryActionState.PROPOSED) -> RecoveryAction:
+def create_action(
+    state: RecoveryActionState = RecoveryActionState.PROPOSED,
+    authorization_decision: PolicyDecision | None = None,
+) -> RecoveryAction:
+    if (
+        state in (RecoveryActionState.QUEUED, RecoveryActionState.EXECUTING)
+        and authorization_decision is None
+    ):
+        authorization_decision = PolicyDecision.ALLOW
     return RecoveryAction(
         id=RecoveryActionId("act_123"),
         recovery_case_id=RecoveryCaseId("rc_123"),
         strategy=RecoveryStrategy.RETRY_SAME_METHOD,
         state=state,
+        authorization_decision=authorization_decision,
         created_at=NOW,
         updated_at=NOW,
     )
@@ -65,6 +74,47 @@ class TestRecoveryActionStateMachine:
         with pytest.raises(UnauthorizedActionTransitionError):
             action.transition_to(RecoveryActionState.EXECUTING, NOW)
 
+    def test_direct_constructor_unauthorized_execution_rejected(self) -> None:
+        """CRITICAL: Cannot instantiate action directly in QUEUED/EXECUTING without ALLOW."""
+        with pytest.raises(UnauthorizedActionTransitionError):
+            RecoveryAction(
+                id=RecoveryActionId("act_bypass"),
+                recovery_case_id=RecoveryCaseId("rc_123"),
+                strategy=RecoveryStrategy.RETRY_SAME_METHOD,
+                state=RecoveryActionState.EXECUTING,
+                authorization_decision=None,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+
+        with pytest.raises(UnauthorizedActionTransitionError):
+            RecoveryAction(
+                id=RecoveryActionId("act_bypass"),
+                recovery_case_id=RecoveryCaseId("rc_123"),
+                strategy=RecoveryStrategy.RETRY_SAME_METHOD,
+                state=RecoveryActionState.QUEUED,
+                authorization_decision=PolicyDecision.REVIEW,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+
+    def test_review_decision_cannot_execute(self) -> None:
+        """CRITICAL: PolicyDecision.REVIEW transitions to review state and blocks execution."""
+        action = create_action(RecoveryActionState.PROPOSED)
+        action.authorize(
+            PolicyDecision.REVIEW,
+            reference="POL_REQUIRES_OPERATOR",
+            occurred_at=NOW,
+        )
+        assert action.state == RecoveryActionState.AWAITING_AUTHORIZATION
+        assert not action.is_authorized
+
+        with pytest.raises(UnauthorizedActionTransitionError):
+            action.transition_to(RecoveryActionState.QUEUED, NOW)
+
+        with pytest.raises(UnauthorizedActionTransitionError):
+            action.transition_to(RecoveryActionState.EXECUTING, NOW)
+
     def test_denied_action_cannot_execute(self) -> None:
         """CRITICAL INVARIANT TEST: Denied actions cannot execute."""
         action = create_action(RecoveryActionState.PROPOSED)
@@ -78,21 +128,38 @@ class TestRecoveryActionStateMachine:
         with pytest.raises(TerminalStateError):
             action.transition_to(RecoveryActionState.EXECUTING, NOW)
 
+    def test_terminal_actions_cannot_restart(self) -> None:
+        """CRITICAL: Terminal actions cannot transition anywhere."""
+        succeeded = create_action(RecoveryActionState.SUCCEEDED)
+        with pytest.raises(TerminalStateError):
+            succeeded.transition_to(RecoveryActionState.EXECUTING, NOW)
+
+        failed = create_action(RecoveryActionState.FAILED)
+        with pytest.raises(TerminalStateError):
+            failed.transition_to(RecoveryActionState.EXECUTING, NOW)
+
+        cancelled = create_action(RecoveryActionState.CANCELLED)
+        with pytest.raises(TerminalStateError):
+            cancelled.transition_to(RecoveryActionState.AUTHORIZED, NOW)
+
     @pytest.mark.parametrize("from_state", list(RecoveryActionState))
     @pytest.mark.parametrize("to_state", list(RecoveryActionState))
     def test_complete_action_transition_matrix(
         self, from_state: RecoveryActionState, to_state: RecoveryActionState
     ) -> None:
-        action = create_action(from_state)
-        # Give authorization context if starting from AUTHORIZED or QUEUED
-        authorized_states = (
-            RecoveryActionState.AUTHORIZED,
-            RecoveryActionState.QUEUED,
-            RecoveryActionState.EXECUTING,
+        """Exhaustively verify all 9 x 9 = 81 RecoveryAction transition pairs."""
+        auth_decision = (
+            PolicyDecision.ALLOW
+            if from_state
+            in (
+                RecoveryActionState.AUTHORIZED,
+                RecoveryActionState.QUEUED,
+                RecoveryActionState.EXECUTING,
+            )
+            else None
         )
-        if from_state in authorized_states:
-            action.authorization_decision = PolicyDecision.ALLOW
 
+        action = create_action(from_state, authorization_decision=auth_decision)
         is_allowed = to_state in ALLOWED_ACTION_TRANSITIONS[from_state]
 
         if from_state == to_state:

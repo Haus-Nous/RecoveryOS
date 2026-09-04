@@ -31,6 +31,8 @@ class Policy:
             raise InvalidPolicyError("Policy max_retry_attempts must be >= 0.")
         if self.cooldown_seconds < 0:
             raise InvalidPolicyError("Policy cooldown_seconds must be >= 0.")
+        if self.auto_action_amount_limit.is_negative() or self.review_required_above.is_negative():
+            raise InvalidPolicyError("Policy amount thresholds cannot be negative.")
         if self.auto_action_amount_limit.currency != self.review_required_above.currency:
             raise InvalidPolicyError("Policy amount thresholds must have the same currency.")
         if self.auto_action_amount_limit > self.review_required_above:

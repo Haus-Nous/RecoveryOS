@@ -103,6 +103,16 @@ class RecoveryAction:
         if not isinstance(self.strategy, RecoveryStrategy):
             self.strategy = RecoveryStrategy(str(self.strategy))
 
+        # CONSTRUCTOR INVARIANT: Cannot instantiate executable states without authorization
+        if (
+            self.state in (RecoveryActionState.QUEUED, RecoveryActionState.EXECUTING)
+            and not self.is_authorized
+        ):
+            raise UnauthorizedActionTransitionError(
+                f"RecoveryAction [{self.id}] cannot be initialized in '{self.state.value}' "
+                f"without authorization (Current decision: {self.authorization_decision})."
+            )
+
     @property
     def is_terminal(self) -> bool:
         return self.state in ACTION_TERMINAL_STATES

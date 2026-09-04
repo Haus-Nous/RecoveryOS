@@ -153,7 +153,7 @@ class RecoveryOutcomeRecorded(DomainEvent):
 
 
 class RecoveryVerified(DomainEvent):
-    """Fired when recovered revenue is verified by double-entry ledger reconciliation."""
+    """Fired when recovered revenue is verified by settlement/ledger evidence."""
 
     @classmethod
     def from_verification(
@@ -175,5 +175,29 @@ class RecoveryVerified(DomainEvent):
                 "verified_amount_minor": verified_amount.amount_minor,
                 "currency": verified_amount.currency.value,
                 "evidence_ref": evidence_ref,
+            },
+        )
+
+
+class RecoveryVerificationFailed(DomainEvent):
+    """Fired when settlement verification fails or is rejected."""
+
+    @classmethod
+    def from_failure(
+        cls,
+        case_id: RecoveryCaseId,
+        action_id: RecoveryActionId,
+        reason: str,
+        occurred_at: datetime,
+    ) -> DomainEvent:
+        return DomainEvent.create(
+            event_type="RecoveryVerificationFailed",
+            aggregate_id=str(case_id),
+            aggregate_type="RecoveryCase",
+            occurred_at=occurred_at,
+            payload={
+                "recovery_case_id": str(case_id),
+                "recovery_action_id": str(action_id),
+                "reason": reason,
             },
         )

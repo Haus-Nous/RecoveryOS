@@ -1,22 +1,35 @@
-"""Immutable Domain Event definitions."""
+"""Immutable Domain Event definitions with recursive deep immutability."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import MappingProxyType
 from typing import Any
 
 from app.domain.types import DomainEventId, ensure_utc_datetime, generate_id
 
 
+def _freeze_nested(data: Any) -> Any:
+    """Recursively convert mutable collections (dict, list, set) into immutable equivalents."""
+    if isinstance(data, dict):
+        return MappingProxyType({k: _freeze_nested(v) for k, v in data.items()})
+    if isinstance(data, (list, tuple)):
+        return tuple(_freeze_nested(v) for v in data)
+    if isinstance(data, (set, frozenset)):
+        return frozenset(_freeze_nested(v) for v in data)
+    return data
+
+
 @dataclass(frozen=True, slots=True)
 class DomainEvent:
-    """Base immutable domain event representing a historical business fact."""
+    """Base immutable domain event representing an indelible historical financial fact."""
 
     event_id: DomainEventId
     event_type: str
     aggregate_id: str
     aggregate_type: str
     occurred_at: datetime
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "occurred_at", ensure_utc_datetime(self.occurred_at))
@@ -26,6 +39,7 @@ class DomainEvent:
             raise ValueError("DomainEvent aggregate_id cannot be empty.")
         if not self.aggregate_type or not self.aggregate_type.strip():
             raise ValueError("DomainEvent aggregate_type cannot be empty.")
+        object.__setattr__(self, "payload", _freeze_nested(dict(self.payload)))
 
     @classmethod
     def create(

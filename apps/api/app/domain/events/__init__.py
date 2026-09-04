@@ -13,6 +13,7 @@ from app.domain.events.recovery_events import (
     RecoveryCaseOpened,
     RecoveryOutcomeRecorded,
     RecoveryProposalCreated,
+    RecoveryVerificationFailed,
     RecoveryVerified,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "RecoveryCaseOpened",
     "RecoveryOutcomeRecorded",
     "RecoveryProposalCreated",
+    "RecoveryVerificationFailed",
     "RecoveryVerified",
 ]

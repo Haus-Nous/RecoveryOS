@@ -100,6 +100,10 @@ class Payment:
             self.state = PaymentState(str(self.state))
         if self.attempt_number < 1:
             raise InvariantViolationError("Payment attempt_number must be >= 1.")
+        if not self.amount.is_positive():
+            raise InvariantViolationError("Payment amount must be strictly positive.")
+        if self.state == PaymentState.CAPTURED:
+            self.failure = None
 
     @property
     def is_terminal(self) -> bool:
@@ -142,6 +146,8 @@ class Payment:
 
         if new_state == PaymentState.FAILED and failure is not None:
             self.failure = failure
+        elif new_state == PaymentState.CAPTURED:
+            self.failure = None
 
         self.state = new_state
         self.updated_at = occurred_at

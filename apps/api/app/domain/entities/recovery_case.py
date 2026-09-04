@@ -20,7 +20,11 @@ from app.domain.values.money import Money
 
 
 class RecoveryCaseState(StrEnum):
-    """Lifecycle states of a revenue-loss recovery case."""
+    """Lifecycle states of a revenue-loss recovery case.
+
+    Enforces the core distinction:
+    ACTION SUCCESS != RECOVERY OBSERVED != VERIFIED RECOVERED REVENUE.
+    """
 
     OPEN = "OPEN"
     DIAGNOSING = "DIAGNOSING"
@@ -28,7 +32,10 @@ class RecoveryCaseState(StrEnum):
     AWAITING_REVIEW = "AWAITING_REVIEW"
     APPROVED = "APPROVED"
     EXECUTING = "EXECUTING"
-    RECOVERED = "RECOVERED"
+    RECOVERY_OBSERVED = "RECOVERY_OBSERVED"
+    AWAITING_VERIFICATION = "AWAITING_VERIFICATION"
+    VERIFIED_RECOVERED = "VERIFIED_RECOVERED"
+    VERIFICATION_FAILED = "VERIFICATION_FAILED"
     EXHAUSTED = "EXHAUSTED"
     ESCALATED = "ESCALATED"
     CANCELLED = "CANCELLED"
@@ -71,28 +78,53 @@ ALLOWED_CASE_TRANSITIONS: dict[RecoveryCaseState, frozenset[RecoveryCaseState]] 
     ),
     RecoveryCaseState.EXECUTING: frozenset(
         {
-            RecoveryCaseState.RECOVERED,
+            RecoveryCaseState.RECOVERY_OBSERVED,
             RecoveryCaseState.DIAGNOSING,
             RecoveryCaseState.PLANNED,
             RecoveryCaseState.EXHAUSTED,
             RecoveryCaseState.ESCALATED,
         }
     ),
-    RecoveryCaseState.ESCALATED: frozenset(
+    RecoveryCaseState.RECOVERY_OBSERVED: frozenset(
         {
+            RecoveryCaseState.AWAITING_VERIFICATION,
+            RecoveryCaseState.VERIFIED_RECOVERED,
+            RecoveryCaseState.VERIFICATION_FAILED,
+            RecoveryCaseState.CANCELLED,
+        }
+    ),
+    RecoveryCaseState.AWAITING_VERIFICATION: frozenset(
+        {
+            RecoveryCaseState.VERIFIED_RECOVERED,
+            RecoveryCaseState.VERIFICATION_FAILED,
+            RecoveryCaseState.CANCELLED,
+        }
+    ),
+    RecoveryCaseState.VERIFICATION_FAILED: frozenset(
+        {
+            RecoveryCaseState.ESCALATED,
+            RecoveryCaseState.DIAGNOSING,
             RecoveryCaseState.PLANNED,
             RecoveryCaseState.EXHAUSTED,
             RecoveryCaseState.CANCELLED,
         }
     ),
-    RecoveryCaseState.RECOVERED: frozenset(),  # Terminal
+    RecoveryCaseState.ESCALATED: frozenset(
+        {
+            RecoveryCaseState.PLANNED,
+            RecoveryCaseState.DIAGNOSING,
+            RecoveryCaseState.EXHAUSTED,
+            RecoveryCaseState.CANCELLED,
+        }
+    ),
+    RecoveryCaseState.VERIFIED_RECOVERED: frozenset(),  # Terminal
     RecoveryCaseState.EXHAUSTED: frozenset(),  # Terminal
     RecoveryCaseState.CANCELLED: frozenset(),  # Terminal
 }
 
 CASE_TERMINAL_STATES: frozenset[RecoveryCaseState] = frozenset(
     {
-        RecoveryCaseState.RECOVERED,
+        RecoveryCaseState.VERIFIED_RECOVERED,
         RecoveryCaseState.EXHAUSTED,
         RecoveryCaseState.CANCELLED,
     }

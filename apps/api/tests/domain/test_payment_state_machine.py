@@ -1,4 +1,4 @@
-"""Tests for Payment aggregate, failure context, and full transition matrix."""
+"""Tests for Payment aggregate, failure context, and full 8x8 transition matrix."""
 
 from datetime import UTC, datetime
 
@@ -75,6 +75,29 @@ class TestPaymentStateMachine:
         assert p.failure == failure
         assert p.is_terminal
 
+    def test_captured_clears_failure_context(self) -> None:
+        failure = PaymentFailure(
+            category=FailureCategory.TIMEOUT,
+            code="TIMEOUT",
+            reason="Previous attempt timed out",
+            is_retryable_hint=True,
+            occurred_at=NOW,
+        )
+        p = Payment(
+            id=PaymentId("pay_123"),
+            merchant_id=MerchantId("mer_abc"),
+            order_id=OrderId("ord_123"),
+            amount=Money.from_minor(10000, Currency.INR),
+            state=PaymentState.AUTHORIZED,
+            attempt_number=1,
+            failure=failure,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        p.capture(NOW)
+        assert p.state == PaymentState.CAPTURED
+        assert p.failure is None
+
     def test_captured_to_failed_is_forbidden(self) -> None:
         p = create_payment(PaymentState.CAPTURED)
         with pytest.raises(InvalidStateTransitionError):
@@ -103,12 +126,25 @@ class TestPaymentStateMachine:
                 updated_at=NOW,
             )
 
+    def test_payment_amount_must_be_positive(self) -> None:
+        with pytest.raises(InvariantViolationError):
+            Payment(
+                id=PaymentId("pay_123"),
+                merchant_id=MerchantId("mer_abc"),
+                order_id=OrderId("ord_123"),
+                amount=Money.zero(Currency.INR),
+                state=PaymentState.CREATED,
+                attempt_number=1,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+
     @pytest.mark.parametrize("from_state", list(PaymentState))
     @pytest.mark.parametrize("to_state", list(PaymentState))
     def test_complete_payment_transition_matrix(
         self, from_state: PaymentState, to_state: PaymentState
     ) -> None:
-        """Exhaustively verify all Payment state transition pairs."""
+        """Exhaustively verify all 8 x 8 = 64 Payment state transition pairs."""
         p = create_payment(from_state)
         is_allowed = to_state in ALLOWED_PAYMENT_TRANSITIONS[from_state]
 

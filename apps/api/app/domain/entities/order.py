@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from app.domain.exceptions import InvalidStateTransitionError, TerminalStateError
+from app.domain.exceptions import (
+    InvalidStateTransitionError,
+    InvariantViolationError,
+    TerminalStateError,
+)
 from app.domain.types import MerchantId, OrderId, ensure_utc_datetime
 from app.domain.values.money import Money
 
@@ -50,6 +54,8 @@ class Order:
         self.updated_at = ensure_utc_datetime(self.updated_at)
         if not isinstance(self.status, OrderStatus):
             self.status = OrderStatus(str(self.status))
+        if not self.amount.is_positive():
+            raise InvariantViolationError("Order amount must be strictly positive.")
 
     @property
     def is_terminal(self) -> bool:
