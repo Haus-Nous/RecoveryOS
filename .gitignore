@@ -11,6 +11,7 @@ out/
 dist/
 build/
 .pnpm-debug.log*
+.pnpm-store/
 
 # Python
 .venv/

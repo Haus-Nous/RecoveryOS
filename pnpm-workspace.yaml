@@ -2,15 +2,28 @@ packages:
   - 'apps/*'
 
 onlyBuiltDependencies:
-  - esbuild
-  - sharp
-  - unrs-resolver
+  - '@unrs/resolver-binding-android-arm-eabi'
+  - '@unrs/resolver-binding-android-arm64'
   - '@unrs/resolver-binding-darwin-arm64'
   - '@unrs/resolver-binding-darwin-x64'
-  - '@unrs/resolver-binding-linux-x64-gnu'
-  - '@unrs/resolver-binding-linux-x64-musl'
+  - '@unrs/resolver-binding-freebsd-x64'
+  - '@unrs/resolver-binding-linux-arm-gnueabihf'
+  - '@unrs/resolver-binding-linux-arm-musleabihf'
   - '@unrs/resolver-binding-linux-arm64-gnu'
   - '@unrs/resolver-binding-linux-arm64-musl'
+  - '@unrs/resolver-binding-linux-loong64-gnu'
+  - '@unrs/resolver-binding-linux-loong64-musl'
+  - '@unrs/resolver-binding-linux-ppc64-gnu'
+  - '@unrs/resolver-binding-linux-riscv64-gnu'
+  - '@unrs/resolver-binding-linux-riscv64-musl'
+  - '@unrs/resolver-binding-linux-s390x-gnu'
+  - '@unrs/resolver-binding-linux-x64-gnu'
+  - '@unrs/resolver-binding-linux-x64-musl'
+  - esbuild
+  - napi-postinstall
+  - sharp
+  - unrs-resolver
 
 overrides:
   postcss: '>=8.5.23'
+
