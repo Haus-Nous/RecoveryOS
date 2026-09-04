@@ -3,7 +3,7 @@
 | Phase | Title | Status | Description |
 | :---: | :--- | :---: | :--- |
 | **0** | **Foundation, Architecture & Verified Environment** | **IMPLEMENTED** | Monorepo, Next.js frontend shell, FastAPI backend, PostgreSQL, Redis, Docker Compose, Alembic, health/readiness endpoints, tests, quality gates, CI. |
-| **1** | Domain Model & Financial State Machines | PLANNED | Payment, Order, RecoveryCase, RecoveryAction, and deterministic state transitions. |
+| **1** | **Domain Model & Financial State Machines** | **IMPLEMENTED** | Pure domain layer: Money (integer minor units), Currency, Order, Payment, PaymentFailure taxonomy, RecoveryCase, RecoveryProposal, Policy, RecoveryAction, RecoveryOutcome, immutable Domain Events, strict authorization guardrails, exhaustive state machine transition matrices. |
 | **2** | Database & Persistence Layer | PLANNED | SQLAlchemy tables, UUID primary keys, JSONB event stores, indexing. |
 | **3** | Auth, RBAC & Multi-Tenancy | PLANNED | Tenant isolation, API keys, merchant access control. |
 | **4** | Synthetic Payment Laboratory | PLANNED | Deterministic payment failure generator for testing complex edge cases. |

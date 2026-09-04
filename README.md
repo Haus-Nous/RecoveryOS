@@ -16,16 +16,18 @@ INFRASTRUCTURE EXECUTES.
 LEDGER VERIFIES.
 ```
 
-1. **AI Proposes**: Diagnostic models and heuristic engines inspect payment failure events and formulate structured recovery action plans.
-2. **Policy Authorizes**: Deterministic merchant-configured policy rules evaluate proposed plans and strictly allow, escalate for review, or deny execution.
-3. **Infrastructure Executes**: High-reliability executors dispatch authorized recovery actions (dynamic checkout links, payment retries, UPI intents) with idempotency guarantees.
-4. **Ledger Verifies**: Double-entry financial reconciliation records every event, verifying settled revenue before reporting recovered capital.
+1. **AI Proposes**: Diagnostic models and heuristic engines inspect payment failure events and formulate structured recovery action plans (`RecoveryProposal`).
+2. **Policy Authorizes**: Deterministic merchant-configured policy rules evaluate proposed plans and strictly allow (`PolicyDecision.ALLOW`), escalate for review (`REVIEW`), or deny execution (`DENY`).
+3. **Infrastructure Executes**: High-reliability executors dispatch authorized recovery actions (`RecoveryAction`) with idempotency guarantees.
+4. **Ledger Verifies**: Double-entry financial reconciliation records every event, verifying settled revenue (`RecoveryOutcome.VERIFIED`) before reporting recovered capital.
 
 ---
 
 ## Status & Current Phase
 
-- **Current Phase**: **Phase 0 — Foundation, Architecture & Verified Development Environment** (COMPLETE)
+- **Completed Phases**:
+  - **Phase 0 — Foundation, Architecture & Verified Development Environment** (COMPLETE)
+  - **Phase 1 — Domain Model & Financial State Machines** (COMPLETE)
 - **Roadmap**: See [docs/PHASES.md](docs/PHASES.md) for the complete 21-phase plan.
 
 ---
@@ -36,7 +38,7 @@ LEDGER VERIFIES.
 - **Frontend**: Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS, Lucide Icons, Vitest, React Testing Library
 - **Backend API**: Python 3.12+, FastAPI, Pydantic v2, Pydantic Settings, SQLAlchemy 2.x (Async), Alembic, Pytest, Ruff, Mypy
 - **Infrastructure**: Docker Compose, PostgreSQL 16 Alpine, Redis 7 Alpine
-- **CI / Quality**: GitHub Actions, strict static analysis, and automated integration tests
+- **CI / Quality**: GitHub Actions, strict static analysis, and automated unit/integration test suites
 
 ---
 
@@ -53,8 +55,13 @@ RecoveryOS/
 │   │   ├── app/
 │   │   │   ├── api/             # Routes and endpoints (/health, /ready)
 │   │   │   ├── core/            # Config, logging, middleware
+│   │   │   ├── domain/          # Pure Domain Model & Financial State Machines
+│   │   │   │   ├── entities/    # Order, Payment, RecoveryCase, Proposal, Policy, Action, Outcome
+│   │   │   │   ├── events/      # Immutable Domain Events
+│   │   │   │   ├── services/    # Pure domain services
+│   │   │   │   └── values/      # Money (minor units), Currency, Confidence, Failure taxonomy
 │   │   │   └── infrastructure/  # SQLAlchemy and Redis async clients
-│   │   ├── tests/               # Pytest suite
+│   │   ├── tests/               # Pytest suite (318+ tests)
 │   │   └── pyproject.toml       # Backend dependencies & tool configs
 │   └── web/                     # Next.js Frontend Application
 │       ├── src/
@@ -67,9 +74,11 @@ RecoveryOS/
 ├── docs/
 │   ├── ARCHITECTURE.md          # Architecture specifications & diagrams
 │   ├── DEVELOPMENT.md           # Local setup and workflow guide
+│   ├── DOMAIN_MODEL.md          # Domain model specifications & invariants
 │   ├── PHASES.md                # 21-phase roadmap
 │   ├── PRODUCT.md               # Product requirements and non-goals
-│   └── SECURITY_PRINCIPLES.md   # Security policies & guardrails
+│   ├── SECURITY_PRINCIPLES.md   # Security policies & guardrails
+│   └── STATE_MACHINES.md        # State machine transition charts & matrices
 ├── .env.example                 # Configuration template
 ├── .gitignore                   # Comprehensive gitignore
 ├── docker-compose.yml           # PostgreSQL 16 + Redis 7 services
@@ -152,6 +161,8 @@ make dev
 
 - [Product Specification](docs/PRODUCT.md)
 - [Architecture & Diagrams](docs/ARCHITECTURE.md)
+- [Domain Model Specification](docs/DOMAIN_MODEL.md)
+- [State Machine Transitions](docs/STATE_MACHINES.md)
 - [Security Principles](docs/SECURITY_PRINCIPLES.md)
 - [Local Development Guide](docs/DEVELOPMENT.md)
 - [Phase Roadmap (0–20)](docs/PHASES.md)

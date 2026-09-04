@@ -15,21 +15,29 @@ LEDGER VERIFIES.
 
 ## Implemented Architecture vs Planned Architecture
 
-### IMPLEMENTED NOW (Phase 0: Foundation)
-- **Monorepo Structure**: Clean workspace with `@recoveryos/web` (Next.js 15) and `recoveryos-api` (FastAPI).
+### IMPLEMENTED NOW (Phase 0: Foundation & Phase 1: Domain Model)
+- **Monorepo Structure**: Workspace with `@recoveryos/web` (Next.js 15) and `recoveryos-api` (FastAPI).
+- **Domain Layer (`apps/api/app/domain`)**:
+  - **Values**: `Money` (integer minor units, floats prohibited, currency-checked arithmetic), `Currency` (ISO-4217), `Confidence` (bounded 0..10000 bps), `PaymentFailure` taxonomy, `PolicyDecision` (`ALLOW`, `REVIEW`, `DENY`), `ProposalSource`.
+  - **Entities & Aggregates**: `Order`, `Payment`, `RecoveryCase`, `RecoveryProposal`, `Policy`, `RecoveryAction`, `RecoveryOutcome`.
+  - **State Machines**: Fully validated transition matrices and terminal state enforcement for Order, Payment, RecoveryCase, and RecoveryAction.
+  - **Authorization Guardrail Invariant**: `RecoveryAction` cannot transition to `QUEUED` or `EXECUTING` without explicit `PolicyDecision.ALLOW`.
+  - **Reconciliation Invariant**: `RecoveryOutcome` cannot be `VERIFIED` without non-empty evidence reference and verified timestamp.
+  - **Domain Events**: Immutable frozen events for orders, payments, cases, proposals, actions, outcomes, and verifications.
 - **Infrastructure**: Docker Compose managing PostgreSQL 16 Alpine and Redis 7 Alpine with health checks.
 - **API Runtime**: FastAPI application with structured logging, Correlation ID tracking, and centralized exception handling.
 - **Dependency Readiness**: Real-time `/health` (process liveness) and `/ready` (PostgreSQL + Redis connectivity checks with active fallback/recovery).
 - **Database & Migrations**: SQLAlchemy 2.x async engine with `asyncpg` and Alembic migration harness connected to live PostgreSQL.
 - **Frontend Console**: Operations shell with responsive layout, live system status polling, and honest placeholder views for future phases.
-- **Quality & CI**: Full test suites (pytest + vitest), static type checkers (mypy + tsc), formatters/linters (ruff + eslint), and GitHub Actions CI workflow.
+- **Quality & CI**: Full test suites (318 pytest + 7 vitest tests), static type checkers (strict mypy + tsc), formatters/linters (ruff + eslint), and GitHub Actions CI workflow.
 
-### PLANNED (Phases 1 – 20)
-- **Payment Journey Reconstruction Engine**
-- **Autonomous Recovery Intelligence (LLM & Heuristics)**
-- **Deterministic Policy & Guardrail Engine**
-- **Razorpay Webhook & API Ingestion Layer**
-- **Double-Entry Financial Ledger & Reconciliation Engine**
+### PLANNED (Phases 2 – 20)
+- **Persistence Layer (Phase 2)**: SQLAlchemy tables mapping to domain entities.
+- **Payment Journey Reconstruction Engine (Phase 7)**
+- **Autonomous Recovery Intelligence (Phase 9)**
+- **Deterministic Policy & Guardrail Engine (Phase 10)**
+- **Razorpay Webhook & API Ingestion Layer (Phases 5 & 6)**
+- **Double-Entry Financial Ledger & Reconciliation Engine (Phase 12)**
 
 ---
 
@@ -72,6 +80,7 @@ flowchart TD
 
 | Component | Responsibility | Boundary Rule |
 | :--- | :--- | :--- |
+| **Domain Layer (`apps/api/app/domain`)** | Pure business entities, state machines, value objects, events. | Zero framework or persistence dependencies; strict financial invariants. |
 | **API (`apps/api`)** | HTTP interface, health checks, webhook receiver, query APIs. | Stateless; communicates with PostgreSQL and Redis. |
 | **Web (`apps/web`)** | Merchant operations console, real-time telemetry, policy configuration. | Typed client calling API; zero secret exposure. |
 | **PostgreSQL** | Primary persistent store for events, journeys, policies, and ledger. | Accessed strictly via SQLAlchemy async sessions and Alembic. |
