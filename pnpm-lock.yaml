@@ -5,6 +5,11 @@ settings:
   excludeLinksFromLockfile: false
   onlyBuiltDependencies:
     - '@unrs/resolver-binding-darwin-arm64'
+    - '@unrs/resolver-binding-darwin-x64'
+    - '@unrs/resolver-binding-linux-arm64-gnu'
+    - '@unrs/resolver-binding-linux-arm64-musl'
+    - '@unrs/resolver-binding-linux-x64-gnu'
+    - '@unrs/resolver-binding-linux-x64-musl'
     - esbuild
     - sharp
     - unrs-resolver

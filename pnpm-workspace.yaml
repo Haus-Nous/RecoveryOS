@@ -6,6 +6,11 @@ onlyBuiltDependencies:
   - sharp
   - unrs-resolver
   - '@unrs/resolver-binding-darwin-arm64'
+  - '@unrs/resolver-binding-darwin-x64'
+  - '@unrs/resolver-binding-linux-x64-gnu'
+  - '@unrs/resolver-binding-linux-x64-musl'
+  - '@unrs/resolver-binding-linux-arm64-gnu'
+  - '@unrs/resolver-binding-linux-arm64-musl'
 
 overrides:
   postcss: '>=8.5.23'
