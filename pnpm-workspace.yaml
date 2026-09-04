@@ -2,6 +2,10 @@ packages:
   - 'apps/*'
 
 onlyBuiltDependencies:
+  - '@esbuild/darwin-arm64'
+  - '@esbuild/darwin-x64'
+  - '@esbuild/linux-arm64'
+  - '@esbuild/linux-x64'
   - '@unrs/resolver-binding-android-arm-eabi'
   - '@unrs/resolver-binding-android-arm64'
   - '@unrs/resolver-binding-darwin-arm64'
