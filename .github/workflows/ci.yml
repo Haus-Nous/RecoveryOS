@@ -42,6 +42,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: "apps/api/pyproject.toml"
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
