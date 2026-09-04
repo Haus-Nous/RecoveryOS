@@ -106,7 +106,11 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pnpm install --frozen-lockfile || pnpm install --reporter=default
+          pnpm install --frozen-lockfile 2>&1 | tee pnpm-install.log || {
+            ERR_MSG=$(tail -n 20 pnpm-install.log | tr '\n' ' ')
+            echo "::error title=PNPM Error::$ERR_MSG"
+            exit 1
+          }
 
       - name: TypeScript Typecheck
         run: pnpm --filter @recoveryos/web typecheck
