@@ -14,7 +14,9 @@ from app.domain.entities.recovery_action import RecoveryAction, RecoveryActionSt
 from app.domain.entities.recovery_case import RecoveryCase, RecoveryCaseState
 from app.domain.entities.recovery_outcome import OutcomeStatus, RecoveryOutcome, VerificationStatus
 from app.domain.entities.recovery_proposal import RecoveryProposal, RecoveryStrategy
+from app.domain.events.base import DomainEvent
 from app.domain.types import (
+    DomainEventId,
     MerchantId,
     OrderId,
     PaymentId,
@@ -131,6 +133,16 @@ async def test_multi_tenant_isolation_across_all_aggregates(
             verified_at=now,
         )
 
+        evt_a = DomainEvent(
+            event_id=DomainEventId("evt_01JALPHA_EVT_000000000000"),
+            event_type="PaymentFailureDetected",
+            aggregate_type="Payment",
+            aggregate_id=str(payment_a.id),
+            occurred_at=now,
+            payload={"merchant_id": str(merchant_a), "reason": "insufficient_funds"},
+        )
+        uow_a.track_event(merchant_a, evt_a)
+
         await uow_a.orders.save(merchant_a, order_a)
         await uow_a.payments.save(merchant_a, payment_a)
         await uow_a.recovery_cases.save(merchant_a, case_a)
@@ -140,7 +152,13 @@ async def test_multi_tenant_isolation_across_all_aggregates(
         await uow_a.recovery_outcomes.save(merchant_a, out_a)
         await uow_a.commit()
 
-    # 3. Verify Merchant B cannot read ANY of Merchant A's resources via tenant-scoped repos
+    # 3. Verify Merchant A can read their domain event
+    async with uow_a:
+        a_events = await uow_a.events.list_by_aggregate(merchant_a, "Payment", str(payment_a.id))
+        assert len(a_events) == 1
+        assert a_events[0].event_id == evt_a.event_id
+
+    # 4. Verify Merchant B cannot read ANY of Merchant A's resources via tenant-scoped repos
     uow_b = SqlAlchemyUnitOfWork(session_factory)
     async with uow_b:
         # Order isolation
@@ -173,6 +191,15 @@ async def test_multi_tenant_isolation_across_all_aggregates(
         # Outcome isolation
         assert await uow_b.recovery_outcomes.get_by_action_id(merchant_b, act_a.id) is None
         assert len(await uow_b.recovery_outcomes.list_by_case_id(merchant_b, case_a.id)) == 0
+
+        # Domain event isolation (Merchant B querying aggregate_id of Merchant A yields empty list)
+        assert (
+            len(await uow_b.events.list_by_aggregate(merchant_b, "Payment", str(payment_a.id))) == 0
+        )
+        assert (
+            len(await uow_b.events.list_by_aggregate(merchant_b, "RecoveryCase", str(case_a.id)))
+            == 0
+        )
 
 
 @pytest.mark.asyncio

@@ -188,9 +188,10 @@ class DomainEventRepository(Protocol):
 
     async def list_by_aggregate(
         self,
+        merchant_id: MerchantId,
         aggregate_type: str,
         aggregate_id: str,
         limit: int = 100,
     ) -> Sequence[DomainEvent]:
-        """Fetch domain events for an aggregate in chronological order."""
+        """Fetch domain events for an aggregate in chronological order scoped to merchant."""
         ...

@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import (
 
 # Force test environment variables before importing app
 os.environ["APP_ENV"] = "test"
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres:postgres@localhost:5432/recoveryos"
-os.environ["SYNC_DATABASE_URL"] = "postgresql://postgres:postgres@localhost:5432/recoveryos"
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres:postgres@localhost:5432/recoveryos_test"
+os.environ["SYNC_DATABASE_URL"] = "postgresql://postgres:postgres@localhost:5432/recoveryos_test"
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 
 from sqlalchemy.pool import NullPool

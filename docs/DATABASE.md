@@ -127,3 +127,18 @@ The Unit of Work pattern (`apps/api/app/infrastructure/persistence/unit_of_work.
 2. **Transactional Outbox Foundation**:
    - Domain events tracked during the transaction are written to both `domain_events` (immutable audit log) and `outbox_messages` (pending dispatch table) in the **exact same database transaction** as the aggregate mutations.
    - Note: Phase 2 establishes the **persistence foundation** for outbox storage. Outbox workers, queue dispatchers, and external consumers belong to subsequent phases.
+
+---
+
+## 7. Physical Database Separation & Test-Safety Invariant
+
+To guarantee complete environmental isolation and protect persistent development data from destructive testing routines:
+
+1. **Physical Separation**:
+   - **Development Database**: `recoveryos` (`postgresql+asyncpg://...:5432/recoveryos`)
+   - **Test Database**: `recoveryos_test` (`postgresql+asyncpg://...:5432/recoveryos_test`)
+2. **Fail-Closed Destructive Guard**:
+   - Destructive operations (such as migration downgrade/upgrade cycles or database truncation fixtures) must strictly assert:
+     - `APP_ENV == "test"`
+     - Target database name ends with `_test`
+   - Any execution targeting `production`, `staging`, `development`, or any database not ending in `_test` raises an immediate `RuntimeError` and terminates.

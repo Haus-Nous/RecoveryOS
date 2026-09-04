@@ -391,7 +391,9 @@ async def test_domain_event_roundtrip(db_session: AsyncSession, seed_merchant: A
     await event_repo.append(merchant_id, event)
     await db_session.commit()
 
-    events = await event_repo.list_by_aggregate("Payment", "pay_01JEVTPMT00000000000000000")
+    events = await event_repo.list_by_aggregate(
+        merchant_id, "Payment", "pay_01JEVTPMT00000000000000000"
+    )
     assert len(events) == 1
     rehydrated = events[0]
     assert rehydrated.event_id == event.event_id

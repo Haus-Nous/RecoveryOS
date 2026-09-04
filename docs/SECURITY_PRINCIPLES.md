@@ -29,3 +29,13 @@
 
 ## 8. Accurate Compliance Representation
 - This application does not make false certification claims. We describe our architecture as "production-oriented" and "designed toward production-grade security practices."
+
+## 9. Structural Multi-Tenant Data Isolation
+- Every merchant-owned financial query and repository port must be explicitly scoped by `MerchantId`.
+- Relational cross-tenant access is prohibited at both the application repository layer and physically via composite database foreign keys.
+- Domain event logs and transactional outbox entries are strictly tenant-scoped.
+
+## 10. Physical Environment Separation & Destructive Test Protection
+- Production, Staging, Development, and Testing environments utilize physically isolated databases.
+- Test suites operate strictly against dedicated test databases ending with `_test` under `APP_ENV=test`.
+- Destructive migration routines and truncate fixtures enforce a fail-closed check to prevent data corruption or loss in non-test databases.

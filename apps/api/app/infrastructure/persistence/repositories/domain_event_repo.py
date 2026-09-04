@@ -30,6 +30,7 @@ class SqlAlchemyDomainEventRepository(DomainEventRepository):
 
     async def list_by_aggregate(
         self,
+        merchant_id: MerchantId,
         aggregate_type: str,
         aggregate_id: str,
         limit: int = 100,
@@ -37,6 +38,7 @@ class SqlAlchemyDomainEventRepository(DomainEventRepository):
         stmt = (
             select(DomainEventModel)
             .where(
+                DomainEventModel.merchant_id == str(merchant_id),
                 DomainEventModel.aggregate_type == aggregate_type,
                 DomainEventModel.aggregate_id == aggregate_id,
             )
