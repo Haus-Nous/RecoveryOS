@@ -1,0 +1,79 @@
+"""Typed enumerations and categories for the Synthetic Payment Laboratory."""
+
+from enum import StrEnum
+
+
+class Recoverability(StrEnum):
+    """Evaluation label defining recoverability within the evaluation horizon."""
+
+    RECOVERABLE = "RECOVERABLE"
+    CONDITIONALLY_RECOVERABLE = "CONDITIONALLY_RECOVERABLE"
+    NON_RECOVERABLE = "NON_RECOVERABLE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class SyntheticFailureCategory(StrEnum):
+    """Provider-independent failure classification for synthetic payment attempts."""
+
+    NONE = "NONE"
+    ISSUER_DECLINE = "ISSUER_DECLINE"
+    INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS"
+    EXPIRED_INSTRUMENT = "EXPIRED_INSTRUMENT"
+    INVALID_INSTRUMENT = "INVALID_INSTRUMENT"
+    AUTHENTICATION_FAILURE = "AUTHENTICATION_FAILURE"
+    NETWORK_TIMEOUT = "NETWORK_TIMEOUT"
+    GATEWAY_UNAVAILABLE = "GATEWAY_UNAVAILABLE"
+    RATE_LIMITED = "RATE_LIMITED"
+    CUSTOMER_ABANDONMENT = "CUSTOMER_ABANDONMENT"
+    DUPLICATE_ATTEMPT = "DUPLICATE_ATTEMPT"
+    PROCESSING_ERROR = "PROCESSING_ERROR"
+    PROVIDER_CONFIGURATION = "PROVIDER_CONFIGURATION"
+    FRAUD_OR_RISK_DECLINE = "FRAUD_OR_RISK_DECLINE"
+    UNKNOWN_TRANSIENT = "UNKNOWN_TRANSIENT"
+    UNKNOWN_PERMANENT = "UNKNOWN_PERMANENT"
+
+
+class RecoveryStrategyClass(StrEnum):
+    """High-level evaluation class for expected recovery strategy."""
+
+    RETRY_SAME_METHOD = "RETRY_SAME_METHOD"
+    WAIT_AND_RETRY = "WAIT_AND_RETRY"
+    CUSTOMER_ACTION_REQUIRED = "CUSTOMER_ACTION_REQUIRED"
+    USE_ALTERNATE_METHOD = "USE_ALTERNATE_METHOD"
+    DO_NOT_RETRY = "DO_NOT_RETRY"
+    NO_RECOVERY_NEEDED = "NO_RECOVERY_NEEDED"
+
+
+class PaymentMethod(StrEnum):
+    """Canonical payment methods modeled in the synthetic laboratory."""
+
+    CARD = "CARD"
+    UPI = "UPI"
+    NETBANKING = "NETBANKING"
+    WALLET = "WALLET"
+    EMI = "EMI"
+
+
+class MerchantProfileType(StrEnum):
+    """Behavior archetypes for synthetic merchants."""
+
+    LOW_RISK_RETAIL = "LOW_RISK_RETAIL"
+    HIGH_VOLUME_MARKETPLACE = "HIGH_VOLUME_MARKETPLACE"
+    SUBSCRIPTION_LIKE = "SUBSCRIPTION_LIKE"
+    DIGITAL_SERVICES = "DIGITAL_SERVICES"
+    HIGH_TICKET_COMMERCE = "HIGH_TICKET_COMMERCE"
+
+
+class SyntheticEventType(StrEnum):
+    """Provider-neutral event vocabulary for synthetic payment event streams."""
+
+    ORDER_CREATED = "ORDER_CREATED"
+    PAYMENT_CREATED = "PAYMENT_CREATED"
+    PAYMENT_AUTHENTICATION_REQUIRED = "PAYMENT_AUTHENTICATION_REQUIRED"
+    PAYMENT_AUTHORIZED = "PAYMENT_AUTHORIZED"
+    PAYMENT_CAPTURED = "PAYMENT_CAPTURED"
+    PAYMENT_FAILED = "PAYMENT_FAILED"
+    PAYMENT_PENDING = "PAYMENT_PENDING"
+    PAYMENT_CANCELLED = "PAYMENT_CANCELLED"
+    PAYMENT_TIMED_OUT = "PAYMENT_TIMED_OUT"
+    PAYMENT_UPDATED = "PAYMENT_UPDATED"

@@ -26,11 +26,12 @@ LEDGER VERIFIES.
 ## Status & Current Phase
 
 - **Completed Phases**:
-  - **Phase 0 — Foundation, Architecture & Verified Development Environment** (COMPLETE)
-  - **Phase 1 / 1R — Domain Model & Financial State Machines** (COMPLETE & FROZEN)
-  - **Phase 2 / 2R / 2RR — Database, Persistence & Transactional Foundation** (COMPLETE & SEALED)
-  - **Phase 3 — Authentication, RBAC & Multi-Tenant Authorization** (COMPLETE & VERIFIED)
-- **Roadmap**: See [docs/PHASES.md](docs/PHASES.md) for the complete 21-phase plan.
+  - **Phase 0 — Foundation, Architecture & Verified Development Environment** (IMPLEMENTED)
+  - **Phase 1 / 1R — Domain Model & Financial State Machines** (FROZEN)
+  - **Phase 2 / 2R / 2RR — Database, Persistence & Transactional Foundation** (SEALED)
+  - **Phase 3 / 3R — Authentication, RBAC & Multi-Tenant Authorization** (FROZEN)
+  - **Phase 4 — Synthetic Payment Laboratory** (IMPLEMENTED)
+- **Planned Phases**: Phase 5–20 (See [docs/PHASES.md](docs/PHASES.md) for the complete 21-phase plan).
 
 ---
 
@@ -56,31 +57,37 @@ RecoveryOS/
 │   │   ├── alembic/             # Database migrations
 │   │   ├── app/
 │   │   │   ├── api/             # Routes and endpoints (/health, /ready)
+│   │   │   ├── application/     # Application services, commands, queries, auth & RBAC
 │   │   │   ├── core/            # Config, logging, middleware
-│   │   │   ├── domain/          # Pure Domain Model & Financial State Machines
+│   │   │   ├── domain/          # Pure Domain Model & Financial State Machines (FROZEN)
 │   │   │   │   ├── entities/    # Order, Payment, RecoveryCase, Proposal, Policy, Action, Outcome
 │   │   │   │   ├── events/      # Immutable Domain Events
 │   │   │   │   ├── services/    # Pure domain services
 │   │   │   │   └── values/      # Money (minor units), Currency, Confidence, Failure taxonomy
-│   │   │   └── infrastructure/  # SQLAlchemy and Redis async clients
-│   │   ├── tests/               # Pytest suite (318+ tests)
+│   │   │   ├── infrastructure/  # SQLAlchemy, Redis async clients, repositories & UoW (SEALED)
+│   │   │   └── lab/             # Synthetic Payment Laboratory (generator, scenarios, validator, CLI)
+│   │   ├── tests/               # Pytest suite (567+ tests)
 │   │   └── pyproject.toml       # Backend dependencies & tool configs
 │   └── web/                     # Next.js Frontend Application
 │       ├── src/
 │       │   ├── app/             # Next.js App Router pages
 │       │   ├── components/      # Operations console shell & live system status
-│       │   ├── lib/             # Typed API client
+│       │   ├── lib/             # Typed API client & auth context
 │       │   └── test/            # Vitest suite
 │       ├── package.json
 │       └── tsconfig.json
 ├── docs/
 │   ├── ARCHITECTURE.md          # Architecture specifications & diagrams
+│   ├── AUTHENTICATION.md        # Authentication specifications (Phase 3)
+│   ├── AUTHORIZATION.md         # RBAC & authorization specifications (Phase 3)
+│   ├── DATABASE.md              # Database persistence & isolation specifications (Phase 2)
 │   ├── DEVELOPMENT.md           # Local setup and workflow guide
 │   ├── DOMAIN_MODEL.md          # Domain model specifications & invariants
 │   ├── PHASES.md                # 21-phase roadmap
 │   ├── PRODUCT.md               # Product requirements and non-goals
 │   ├── SECURITY_PRINCIPLES.md   # Security policies & guardrails
-│   └── STATE_MACHINES.md        # State machine transition charts & matrices
+│   ├── STATE_MACHINES.md        # State machine transition charts & matrices
+│   └── SYNTHETIC_LAB.md         # Synthetic Payment Laboratory specifications (Phase 4)
 ├── .env.example                 # Configuration template
 ├── .gitignore                   # Comprehensive gitignore
 ├── docker-compose.yml           # PostgreSQL 16 + Redis 7 services
@@ -165,6 +172,10 @@ make dev
 - [Architecture & Diagrams](docs/ARCHITECTURE.md)
 - [Domain Model Specification](docs/DOMAIN_MODEL.md)
 - [State Machine Transitions](docs/STATE_MACHINES.md)
+- [Database & Persistence Specification](docs/DATABASE.md)
+- [Authentication Specification](docs/AUTHENTICATION.md)
+- [Authorization & RBAC Specification](docs/AUTHORIZATION.md)
+- [Synthetic Payment Laboratory Specification](docs/SYNTHETIC_LAB.md)
 - [Security Principles](docs/SECURITY_PRINCIPLES.md)
 - [Local Development Guide](docs/DEVELOPMENT.md)
 - [Phase Roadmap (0–20)](docs/PHASES.md)
