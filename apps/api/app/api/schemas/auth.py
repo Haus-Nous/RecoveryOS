@@ -68,6 +68,18 @@ class MemberResponse(BaseModel):
     created_at: datetime
 
 
+class MemberCreateRequest(BaseModel):
+    """Payload to add/invite a user into a merchant tenant."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = Field(..., min_length=1, description="Target user ID")
+    role: Role = Field(default=Role.OPERATOR, description="Assigned role for member")
+    status: MembershipStatus = Field(
+        default=MembershipStatus.ACTIVE, description="Initial membership status"
+    )
+
+
 class MemberUpdateRequest(BaseModel):
     """Payload to update a member's role or lifecycle status."""
 

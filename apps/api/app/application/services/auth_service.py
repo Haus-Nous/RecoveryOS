@@ -114,6 +114,15 @@ class AuthService:
             )
             raise AuthorizationError(f"User is not a member of merchant '{merchant_id}'.")
 
+        if membership.status == MembershipStatus.INVITED:
+            logger.warning(
+                "Access denied: Membership invited but not active",
+                extra={"user_id": str(user.id), "merchant_id": str(merchant_id)},
+            )
+            raise AuthorizationError(
+                f"Membership in merchant '{merchant_id}' is pending invitation acceptance."
+            )
+
         if membership.status == MembershipStatus.SUSPENDED:
             logger.warning(
                 "Access denied: Membership suspended",
@@ -127,6 +136,9 @@ class AuthService:
                 extra={"user_id": str(user.id), "merchant_id": str(merchant_id)},
             )
             raise AuthorizationError(f"Membership in merchant '{merchant_id}' has been revoked.")
+
+        if not membership.is_active:
+            raise AuthorizationError(f"Membership in merchant '{merchant_id}' is not active.")
 
         permissions = get_permissions_for_role(membership.role)
         if required_permission is not None and required_permission not in permissions:
@@ -262,5 +274,49 @@ class AuthService:
             saved = await uow.memberships.save(
                 merchant_id, updated_membership, expected_version=target_membership.version
             )
+            await uow.commit()
+            return saved
+
+    async def add_or_invite_member(
+        self,
+        actor_ctx: AuthorizationContext,
+        target_user_id: UserId,
+        role: Role = Role.OPERATOR,
+        status: MembershipStatus = MembershipStatus.ACTIVE,
+    ) -> MerchantMembership:
+        """Add or invite a user into a merchant tenant with strict RBAC permission enforcement."""
+        merchant_id = actor_ctx.merchant_id
+
+        if role == Role.OWNER and Permission.OWNERSHIP_MANAGE not in actor_ctx.permissions:
+            raise AuthorizationError(
+                "Only an OWNER with OWNERSHIP_MANAGE permission may grant the OWNER role."
+            )
+
+        if Permission.MEMBERS_MANAGE not in actor_ctx.permissions:
+            raise AuthorizationError("MEMBERS_MANAGE permission required to add or invite members.")
+
+        async with self._uow_factory() as uow:
+            user = await uow.users.get_by_id(target_user_id)
+            if user is None:
+                raise EntityNotFoundError(f"User '{target_user_id}' does not exist.")
+
+            existing = await uow.memberships.get_membership(merchant_id, target_user_id)
+            if existing is not None:
+                raise DuplicateEntityError(
+                    f"User '{target_user_id}' is already a member of merchant '{merchant_id}'."
+                )
+
+            now = datetime.now(UTC)
+            membership = MerchantMembership(
+                id=MembershipId(f"mem_{uuid.uuid4().hex}"),
+                merchant_id=merchant_id,
+                user_id=target_user_id,
+                role=role,
+                status=status,
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            saved = await uow.memberships.save(merchant_id, membership)
             await uow.commit()
             return saved

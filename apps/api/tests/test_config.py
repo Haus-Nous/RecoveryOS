@@ -30,3 +30,59 @@ def test_cors_origin_parsing() -> None:
 
     settings_list = Settings(cors_allowed_origins=["https://test.recoveryos.com"])
     assert settings_list.cors_allowed_origins == ["https://test.recoveryos.com"]
+
+
+def test_production_auth_config_fail_closed() -> None:
+    """Production and staging must fail closed if auth configuration is incomplete or insecure."""
+    import pytest
+
+    # 1. Missing issuer in production
+    settings_missing_issuer = Settings(
+        app_env="production",
+        auth_issuer=None,
+        auth_audience="authenticated",
+        auth_jwks_url="https://auth.example.com/.well-known/jwks.json",
+    )
+    with pytest.raises(ValueError, match="AUTH_ISSUER"):
+        settings_missing_issuer.validate_production_auth_config()
+
+    # 2. Missing audience in staging
+    settings_missing_audience = Settings(
+        app_env="staging",
+        auth_issuer="https://auth.example.com",
+        auth_audience=None,
+        auth_jwks_url="https://auth.example.com/.well-known/jwks.json",
+    )
+    with pytest.raises(ValueError, match="AUTH_AUDIENCE"):
+        settings_missing_audience.validate_production_auth_config()
+
+    # 3. Missing jwks_url in production
+    settings_missing_jwks = Settings(
+        app_env="production",
+        auth_issuer="https://auth.example.com",
+        auth_audience="authenticated",
+        auth_jwks_url=None,
+    )
+    with pytest.raises(ValueError, match="AUTH_JWKS_URL"):
+        settings_missing_jwks.validate_production_auth_config()
+
+    # 4. Insecure algorithms in production
+    settings_insecure_alg = Settings(
+        app_env="production",
+        auth_issuer="https://auth.example.com",
+        auth_audience="authenticated",
+        auth_jwks_url="https://auth.example.com/.well-known/jwks.json",
+        auth_allowed_algorithms=["HS256", "ES256"],
+    )
+    with pytest.raises(ValueError, match="Symmetric or insecure algorithms"):
+        settings_insecure_alg.validate_production_auth_config()
+
+    # 5. Valid asymmetric config passes
+    valid_settings = Settings(
+        app_env="production",
+        auth_issuer="https://auth.example.com",
+        auth_audience="authenticated",
+        auth_jwks_url="https://auth.example.com/.well-known/jwks.json",
+        auth_allowed_algorithms=["ES256", "RS256"],
+    )
+    valid_settings.validate_production_auth_config()

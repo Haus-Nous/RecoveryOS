@@ -41,7 +41,7 @@ class MerchantMembershipModel(Base):
             name="ck_merchant_memberships_role",
         ),
         CheckConstraint(
-            "status IN ('ACTIVE', 'SUSPENDED', 'REVOKED')",
+            "status IN ('ACTIVE', 'INVITED', 'SUSPENDED', 'REVOKED')",
             name="ck_merchant_memberships_status",
         ),
         Index("ix_merchant_memberships_merchant_status", "merchant_id", "status"),

@@ -98,3 +98,28 @@ def test_alembic_upgrade_downgrade_cycle() -> None:
 
     # 4. Final upgrade to head
     command.upgrade(config, "head")
+
+
+def test_alembic_downgrade_0001_and_check() -> None:
+    """Verify specific downgrade from 0002 to 0001 and ensure alembic check reports no drift."""
+    app_env = os.environ.get("APP_ENV", "test")
+    db_url = os.environ.get(
+        "SYNC_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/recoveryos_test"
+    )
+
+    assert_safe_test_database(db_url, app_env)
+
+    api_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    alembic_ini = os.path.join(api_dir, "alembic.ini")
+    config = Config(alembic_ini)
+    config.set_main_option("script_location", os.path.join(api_dir, "alembic"))
+    config.set_main_option("sqlalchemy.url", db_url)
+
+    # 1. Downgrade to revision 0001_initial_financial_schema
+    command.downgrade(config, "0001_initial_financial_schema")
+
+    # 2. Re-upgrade to head (0002_identity_and_membership)
+    command.upgrade(config, "head")
+
+    # 3. Alembic check for schema model consistency
+    command.check(config)

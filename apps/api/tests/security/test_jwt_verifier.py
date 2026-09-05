@@ -307,3 +307,60 @@ async def test_oversized_token_rejected_immediately() -> None:
 
     with pytest.raises(AuthenticationError, match="maximum permitted size"):
         await verifier.verify_token(oversized)
+
+
+@pytest.mark.asyncio
+async def test_jwks_cache_ttl_and_unknown_kid_refresh(
+    rsa_keypair: tuple[rsa.RSAPrivateKey, rsa.RSAPublicKey],
+) -> None:
+    from unittest.mock import AsyncMock, patch
+
+    priv, pub = rsa_keypair
+    jwk_dict = jwt.algorithms.RSAAlgorithm.to_jwk(pub, as_dict=True)
+    jwk_dict["kid"] = "rotated-rsa-key-1"
+    jwk_dict["alg"] = "RS256"
+
+    issuer = "https://auth.recoveryos.internal"
+    jwks_url = "https://auth.recoveryos.internal/.well-known/jwks.json"
+
+    verifier = JwtTokenVerifier(
+        issuer=issuer,
+        audience="authenticated",
+        jwks_url=jwks_url,
+        allowed_algorithms=["RS256"],
+        jwks_cache_ttl_seconds=300,
+    )
+
+    now = int(time.time())
+    payload = {
+        "iss": issuer,
+        "aud": "authenticated",
+        "sub": "usr_jwks_test",
+        "exp": now + 3600,
+    }
+    token = jwt.encode(payload, priv, algorithm="RS256", headers={"kid": "rotated-rsa-key-1"})
+
+    mock_response = AsyncMock()
+    mock_response.json = lambda: {"keys": [jwk_dict]}
+    mock_response.raise_for_status = lambda: None
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+
+        # First verify -> fetches JWKS (1 network call)
+        p1 = await verifier.verify_token(token)
+        assert p1.subject == "usr_jwks_test"
+        assert mock_get.call_count == 1
+
+        # Second verify -> uses cached JWKS (0 additional network calls)
+        p2 = await verifier.verify_token(token)
+        assert p2.subject == "usr_jwks_test"
+        assert mock_get.call_count == 1
+
+        # Unknown kid token triggers cache refresh
+        unknown_kid_token = jwt.encode(
+            payload, priv, algorithm="RS256", headers={"kid": "unknown-rotated-key"}
+        )
+        with pytest.raises(AuthenticationError, match="not found after JWKS refresh"):
+            await verifier.verify_token(unknown_kid_token)
+        assert mock_get.call_count == 2

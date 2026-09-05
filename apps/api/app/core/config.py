@@ -71,6 +71,10 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"FAIL-CLOSED CONFIG ERROR: 'AUTH_ISSUER' is mandatory in [{env}] environment."
                 )
+            if not self.auth_audience:
+                raise ValueError(
+                    f"FAIL-CLOSED CONFIG ERROR: 'AUTH_AUDIENCE' is mandatory in [{env}] environment."
+                )
             if not self.auth_jwks_url:
                 raise ValueError(
                     f"FAIL-CLOSED CONFIG ERROR: 'AUTH_JWKS_URL' is mandatory in [{env}] environment."

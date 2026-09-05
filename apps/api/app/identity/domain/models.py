@@ -22,6 +22,7 @@ class MembershipStatus(StrEnum):
     """Lifecycle status of a user's merchant membership."""
 
     ACTIVE = "ACTIVE"
+    INVITED = "INVITED"
     SUSPENDED = "SUSPENDED"
     REVOKED = "REVOKED"
 

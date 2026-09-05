@@ -134,6 +134,17 @@ def test_membership_status_enforcement() -> None:
     )
     assert active_mem.has_permission(Permission.MERCHANT_MANAGE) is True
 
+    invited_mem = MerchantMembership(
+        id=MembershipId("m2_invited"),
+        merchant_id=MerchantId("merch_1"),
+        user_id=UserId("u2_invited"),
+        role=Role.OWNER,
+        status=MembershipStatus.INVITED,
+        created_at=now,
+        updated_at=now,
+    )
+    assert invited_mem.has_permission(Permission.MERCHANT_MANAGE) is False
+
     suspended_mem = MerchantMembership(
         id=MembershipId("m2"),
         merchant_id=MerchantId("merch_1"),

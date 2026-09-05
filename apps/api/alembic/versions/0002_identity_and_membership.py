@@ -76,7 +76,7 @@ def upgrade() -> None:
             name="ck_merchant_memberships_role",
         ),
         sa.CheckConstraint(
-            "status IN ('ACTIVE', 'SUSPENDED', 'REVOKED')",
+            "status IN ('ACTIVE', 'INVITED', 'SUSPENDED', 'REVOKED')",
             name="ck_merchant_memberships_status",
         ),
     )

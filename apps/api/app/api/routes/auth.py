@@ -14,6 +14,7 @@ from app.api.dependencies.auth import (
     require_permission,
 )
 from app.api.schemas.auth import (
+    MemberCreateRequest,
     MemberResponse,
     MemberUpdateRequest,
     MerchantCreateRequest,
@@ -175,6 +176,52 @@ async def list_merchant_members(
             )
             for m in members
         ]
+
+
+@router.post(
+    "/merchants/{merchant_id}/members",
+    response_model=MemberResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add or Invite Member",
+    description="Adds or invites a user to the merchant tenant. Requires MEMBERS_MANAGE permission.",
+)
+async def add_merchant_member(
+    merchant_id: str,
+    req: MemberCreateRequest,
+    auth_ctx: Annotated[
+        AuthorizationContext, Depends(require_permission(Permission.MEMBERS_MANAGE))
+    ],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> MemberResponse:
+    try:
+        membership = await auth_service.add_or_invite_member(
+            actor_ctx=auth_ctx,
+            target_user_id=UserId(req.user_id),
+            role=req.role,
+            status=req.status,
+        )
+        return MemberResponse(
+            id=str(membership.id),
+            user_id=str(membership.user_id),
+            role=membership.role,
+            status=membership.status,
+            created_at=membership.created_at,
+        )
+    except DuplicateEntityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except AuthorizationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except EntityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
 
 
 @router.patch(

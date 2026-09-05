@@ -14,9 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.dependencies.auth import get_jwt_token_verifier
 from app.application.ports.authentication import AuthenticatedPrincipal
+from app.domain.types import MerchantId
+from app.identity.domain.models import Permission, Role
+from app.identity.domain.types import UserId
 from app.infrastructure.database import get_session_factory
 from app.infrastructure.persistence.models.membership import MerchantMembershipModel
 from app.infrastructure.persistence.models.merchant import MerchantModel
+from app.infrastructure.persistence.models.user import UserIdentityModel, UserModel
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from app.infrastructure.security.jwt_verifier import JwtTokenVerifier
 from app.main import create_app
@@ -418,3 +422,396 @@ async def test_concurrent_jit_user_creation_is_safe(
     # Launch concurrently
     results = await asyncio.gather(_resolve(), _resolve())
     assert results[0] == results[1]
+
+
+@pytest.mark.asyncio
+async def test_invited_membership_returns_403(
+    authed_client: Any,
+    make_token: Any,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """An invited user has an INVITED membership but has not accepted yet -> receives 403."""
+    token = make_token(sub="usr_invited_sub", email="invited@user.com")
+
+    async with authed_client() as client:
+        # Trigger JIT creation
+        me_resp = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+        user_id = me_resp.json()["id"]
+
+        # Insert Merchant and INVITED membership in DB
+        now = datetime.now(UTC)
+        uow = SqlAlchemyUnitOfWork(session_factory)
+        async with uow:
+            m = MerchantModel(
+                id="merch_invited_tenant",
+                name="Invited Tenant",
+                slug="invited-tenant",
+                created_at=now,
+                updated_at=now,
+            )
+            uow._session.add(m)  # type: ignore[union-attr]
+            await uow._session.flush()  # type: ignore[union-attr]
+            mem = MerchantMembershipModel(
+                id="mem_invited_test",
+                merchant_id="merch_invited_tenant",
+                user_id=user_id,
+                role="OPERATOR",
+                status="INVITED",
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            uow._session.add(mem)  # type: ignore[union-attr]
+            await uow.commit()
+
+        # Accessing merchant endpoint returns 403 Forbidden
+        resp = await client.get(
+            "/api/v1/merchants/merch_invited_tenant",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 403
+        assert "pending invitation" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_no_membership_user_access_matrix(
+    authed_client: Any,
+    make_token: Any,
+) -> None:
+    """User with no memberships can view /me and bootstrap a merchant, but gets 403 on merchant endpoints."""
+    token = make_token(sub="usr_no_membership", email="nomembership@user.com")
+
+    async with authed_client() as client:
+        # /me is allowed (200)
+        me_resp = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+        assert me_resp.status_code == 200
+
+        # Merchant specific endpoint returns 403 Forbidden
+        resp = await client.get(
+            "/api/v1/merchants/merch_any_merchant",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 403
+        assert "not a member" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_multi_merchant_role_isolation(
+    authed_client: Any,
+    make_token: Any,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """One user has ADMIN on Merchant A and AUDITOR on Merchant B.
+
+    Permissions must be strictly isolated per tenant.
+    """
+    token = make_token(sub="usr_multitenant_user", email="multi@tenant.com")
+
+    async with authed_client() as client:
+        # Create JIT user
+        me_resp = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+        user_id = me_resp.json()["id"]
+
+        now = datetime.now(UTC)
+        uow = SqlAlchemyUnitOfWork(session_factory)
+        async with uow:
+            # Create Merchant A and Merchant B
+            ma = MerchantModel(
+                id="merch_alpha_iso",
+                name="Alpha Iso",
+                slug="alpha-iso",
+                created_at=now,
+                updated_at=now,
+            )
+            mb = MerchantModel(
+                id="merch_beta_iso",
+                name="Beta Iso",
+                slug="beta-iso",
+                created_at=now,
+                updated_at=now,
+            )
+            uow._session.add_all([ma, mb])  # type: ignore[union-attr]
+            await uow._session.flush()  # type: ignore[union-attr]
+
+            # Membership A: ADMIN
+            mem_a = MerchantMembershipModel(
+                id="mem_iso_a",
+                merchant_id="merch_alpha_iso",
+                user_id=user_id,
+                role="ADMIN",
+                status="ACTIVE",
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            # Membership B: AUDITOR
+            mem_b = MerchantMembershipModel(
+                id="mem_iso_b",
+                merchant_id="merch_beta_iso",
+                user_id=user_id,
+                role="AUDITOR",
+                status="ACTIVE",
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            uow._session.add_all([mem_a, mem_b])  # type: ignore[union-attr]
+            await uow.commit()
+
+        # In Merchant A (ADMIN): can view members (MEMBERS_READ)
+        resp_a = await client.get(
+            "/api/v1/merchants/merch_alpha_iso/members",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp_a.status_code == 200
+
+        # In Merchant B (AUDITOR): AUDITOR has AUDIT_READ and MEMBERS_READ, but lacks MEMBERS_MANAGE
+        # Inviting a member requires MEMBERS_MANAGE
+        invite_in_b = await client.post(
+            "/api/v1/merchants/merch_beta_iso/members",
+            json={"user_id": "usr_someone_else", "role": "OPERATOR"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert invite_in_b.status_code == 403
+        assert "lacks required permission" in invite_in_b.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_last_owner_demotion_leaves_at_least_one_owner(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Two owners concurrently attempt to demote each other.
+
+    Row locking on merchants serializes the checks, guaranteeing at least one owner remains.
+    """
+    from app.application.services.auth_service import AuthService
+    from app.core.exceptions import LastOwnerViolationError
+
+    auth_service = AuthService(lambda: SqlAlchemyUnitOfWork(session_factory))
+    now = datetime.now(UTC)
+
+    merchant_id = "merch_dual_owner_test"
+    u1_id = "usr_owner_one"
+    u2_id = "usr_owner_two"
+
+    # Setup: 1 merchant and 2 active owners
+    uow = SqlAlchemyUnitOfWork(session_factory)
+    async with uow:
+        m = MerchantModel(
+            id=merchant_id,
+            name="Dual Owner Corp",
+            slug="dual-owner-corp",
+            created_at=now,
+            updated_at=now,
+        )
+        u1 = UserModel(id=u1_id, created_at=now, updated_at=now)
+        u2 = UserModel(id=u2_id, created_at=now, updated_at=now)
+        uow._session.add_all([m, u1, u2])  # type: ignore[union-attr]
+        await uow._session.flush()  # type: ignore[union-attr]
+
+        id1 = UserIdentityModel(
+            id="uid_owner_1",
+            user_id=u1_id,
+            issuer="https://auth.recoveryos.test",
+            subject="sub_1",
+            created_at=now,
+            updated_at=now,
+        )
+        id2 = UserIdentityModel(
+            id="uid_owner_2",
+            user_id=u2_id,
+            issuer="https://auth.recoveryos.test",
+            subject="sub_2",
+            created_at=now,
+            updated_at=now,
+        )
+        uow._session.add_all([id1, id2])  # type: ignore[union-attr]
+        await uow._session.flush()  # type: ignore[union-attr]
+
+        m1 = MerchantMembershipModel(
+            id="mem_owner_1",
+            merchant_id=merchant_id,
+            user_id=u1_id,
+            role="OWNER",
+            status="ACTIVE",
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+        m2 = MerchantMembershipModel(
+            id="mem_owner_2",
+            merchant_id=merchant_id,
+            user_id=u2_id,
+            role="OWNER",
+            status="ACTIVE",
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+        uow._session.add_all([m1, m2])  # type: ignore[union-attr]
+        await uow.commit()
+
+    # Actor 1 context (Owner 1)
+    async with uow:
+        principal_1 = AuthenticatedPrincipal(issuer="https://auth.recoveryos.test", subject="sub_1")
+        ctx_1 = await auth_service.resolve_authorization_context(
+            uow,
+            principal_1,
+            MerchantId(merchant_id),
+            Permission.OWNERSHIP_MANAGE,
+        )
+
+    # Actor 2 context (Owner 2)
+    async with uow:
+        principal_2 = AuthenticatedPrincipal(issuer="https://auth.recoveryos.test", subject="sub_2")
+        ctx_2 = await auth_service.resolve_authorization_context(
+            uow,
+            principal_2,
+            MerchantId(merchant_id),
+            Permission.OWNERSHIP_MANAGE,
+        )
+
+    # Concurrently: Owner 1 demotes Owner 2, Owner 2 demotes Owner 1
+    async def demote_1_to_2() -> str:
+        try:
+            await auth_service.update_member_role_or_status(
+                actor_ctx=ctx_1,
+                target_user_id=UserId(u2_id),
+                new_role=Role.ADMIN,
+            )
+            return "SUCCESS"
+        except LastOwnerViolationError:
+            return "BLOCKED"
+
+    async def demote_2_to_1() -> str:
+        try:
+            await auth_service.update_member_role_or_status(
+                actor_ctx=ctx_2,
+                target_user_id=UserId(u1_id),
+                new_role=Role.ADMIN,
+            )
+            return "SUCCESS"
+        except LastOwnerViolationError:
+            return "BLOCKED"
+
+    results = await asyncio.gather(demote_1_to_2(), demote_2_to_1())
+
+    # Exactly one succeeded and one was blocked by last owner protection
+    assert sorted(results) == ["BLOCKED", "SUCCESS"]
+
+    # Verify database state has exactly 1 active owner remaining
+    async with uow:
+        owners = await uow.memberships.count_active_owners(MerchantId(merchant_id))
+        assert owners == 1
+
+
+@pytest.mark.asyncio
+async def test_identity_and_membership_database_constraints(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Verify database uniqueness and check constraints directly at PostgreSQL level."""
+    from sqlalchemy.exc import IntegrityError
+
+    now = datetime.now(UTC)
+    uow = SqlAlchemyUnitOfWork(session_factory)
+
+    # 1. Duplicate issuer + subject is rejected
+    async with uow:
+        u_main = UserModel(id="usr_db_test_1", created_at=now, updated_at=now)
+        u_dup = UserModel(id="usr_db_test_2", created_at=now, updated_at=now)
+        uow._session.add_all([u_main, u_dup])  # type: ignore[union-attr]
+        await uow._session.flush()  # type: ignore[union-attr]
+        id1 = UserIdentityModel(
+            id="uid_1",
+            user_id="usr_db_test_1",
+            issuer="https://issuer.test",
+            subject="unique_sub_1",
+            created_at=now,
+            updated_at=now,
+        )
+        uow._session.add(id1)  # type: ignore[union-attr]
+        await uow.commit()
+
+    with pytest.raises(IntegrityError):
+        async with uow:
+            id2 = UserIdentityModel(
+                id="uid_2",
+                user_id="usr_db_test_2",
+                issuer="https://issuer.test",
+                subject="unique_sub_1",  # Duplicate (issuer, subject)
+                created_at=now,
+                updated_at=now,
+            )
+            uow._session.add(id2)  # type: ignore[union-attr]
+            await uow.commit()
+
+    # 2. Duplicate (merchant_id, user_id) membership is rejected
+    async with uow:
+        m = MerchantModel(
+            id="merch_db_constraint",
+            name="DB Constraint Corp",
+            slug="db-constraint-corp",
+            created_at=now,
+            updated_at=now,
+        )
+        uow._session.add(m)  # type: ignore[union-attr]
+        await uow._session.flush()  # type: ignore[union-attr]
+        mem1 = MerchantMembershipModel(
+            id="mem_uniq_1",
+            merchant_id="merch_db_constraint",
+            user_id="usr_db_test_1",
+            role="OWNER",
+            status="ACTIVE",
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+        uow._session.add(mem1)  # type: ignore[union-attr]
+        await uow.commit()
+
+    with pytest.raises(IntegrityError):
+        async with uow:
+            mem2 = MerchantMembershipModel(
+                id="mem_uniq_2",
+                merchant_id="merch_db_constraint",
+                user_id="usr_db_test_1",  # Duplicate (merchant, user)
+                role="ADMIN",
+                status="ACTIVE",
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            uow._session.add(mem2)  # type: ignore[union-attr]
+            await uow.commit()
+
+    # 3. Invalid role check constraint
+    with pytest.raises(IntegrityError):
+        async with uow:
+            mem_bad_role = MerchantMembershipModel(
+                id="mem_bad_role",
+                merchant_id="merch_db_constraint",
+                user_id="usr_db_test_2",
+                role="SUPER_ADMIN_INVALID",
+                status="ACTIVE",
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            uow._session.add(mem_bad_role)  # type: ignore[union-attr]
+            await uow.commit()
+
+    # 4. Invalid status check constraint
+    with pytest.raises(IntegrityError):
+        async with uow:
+            mem_bad_status = MerchantMembershipModel(
+                id="mem_bad_status",
+                merchant_id="merch_db_constraint",
+                user_id="usr_db_test_2",
+                role="OWNER",
+                status="DELETED_INVALID",
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            uow._session.add(mem_bad_status)  # type: ignore[union-attr]
+            await uow.commit()
