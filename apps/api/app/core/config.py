@@ -35,6 +35,14 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
+    # Authentication / OIDC / Supabase
+    auth_issuer: str | None = None
+    auth_audience: str | None = "authenticated"
+    auth_jwks_url: str | None = None
+    auth_allowed_algorithms: list[str] = ["ES256", "RS256"]
+    auth_jwks_cache_ttl_seconds: int = 300
+    auth_clock_skew_seconds: int = 10
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> list[str]:
@@ -44,6 +52,38 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return [str(origin).strip() for origin in v if str(origin).strip()]
         return ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    @field_validator("auth_allowed_algorithms", mode="before")
+    @classmethod
+    def parse_auth_algorithms(cls, v: Any) -> list[str]:
+        """Parse comma-separated algorithms string into list of uppercase strings."""
+        if isinstance(v, str):
+            return [alg.strip().upper() for alg in v.split(",") if alg.strip()]
+        if isinstance(v, list):
+            return [str(alg).strip().upper() for alg in v if str(alg).strip()]
+        return ["ES256", "RS256"]
+
+    def validate_production_auth_config(self) -> None:
+        """Fail-closed assertion ensuring staging and production require valid asymmetric auth config."""
+        env = self.app_env.strip().lower()
+        if env in ("production", "staging"):
+            if not self.auth_issuer:
+                raise ValueError(
+                    f"FAIL-CLOSED CONFIG ERROR: 'AUTH_ISSUER' is mandatory in [{env}] environment."
+                )
+            if not self.auth_jwks_url:
+                raise ValueError(
+                    f"FAIL-CLOSED CONFIG ERROR: 'AUTH_JWKS_URL' is mandatory in [{env}] environment."
+                )
+            disallowed = [
+                alg
+                for alg in self.auth_allowed_algorithms
+                if alg in ("NONE", "HS256", "HS384", "HS512")
+            ]
+            if disallowed:
+                raise ValueError(
+                    f"FAIL-CLOSED CONFIG ERROR: Symmetric or insecure algorithms {disallowed} are forbidden in [{env}]."
+                )
 
     @property
     def is_production(self) -> bool:
@@ -58,5 +98,7 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return cached instance of Settings."""
-    return Settings()
+    """Return cached instance of Settings and validate production fail-closed invariants."""
+    settings = Settings()
+    settings.validate_production_auth_config()
+    return settings

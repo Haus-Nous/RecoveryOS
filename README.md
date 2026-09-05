@@ -27,7 +27,9 @@ LEDGER VERIFIES.
 
 - **Completed Phases**:
   - **Phase 0 — Foundation, Architecture & Verified Development Environment** (COMPLETE)
-  - **Phase 1 — Domain Model & Financial State Machines** (COMPLETE)
+  - **Phase 1 / 1R — Domain Model & Financial State Machines** (COMPLETE & FROZEN)
+  - **Phase 2 / 2R / 2RR — Database, Persistence & Transactional Foundation** (COMPLETE & SEALED)
+  - **Phase 3 — Authentication, RBAC & Multi-Tenant Authorization** (COMPLETE & VERIFIED)
 - **Roadmap**: See [docs/PHASES.md](docs/PHASES.md) for the complete 21-phase plan.
 
 ---

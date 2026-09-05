@@ -39,3 +39,15 @@
 - Production, Staging, Development, and Testing environments utilize physically isolated databases.
 - Test suites operate strictly against dedicated test databases ending with `_test` under `APP_ENV=test`.
 - Destructive migration routines and truncate fixtures enforce a fail-closed check to prevent data corruption or loss in non-test databases.
+
+## 11. Threat Modeling & Defense Matrix (Phase 3)
+
+| Threat | Attack Vector | Countermeasure & Defensive Architecture |
+|---|---|---|
+| **Stolen / Expired Token** | Attacker obtains an expired or forged JWT | Dynamic asymmetric verification against IdP JWKS endpoint (`ES256`/`RS256`), expiry validation (`exp`), not-before validation (`nbf`), clock-skew bounds (10s max). |
+| **Role Claim Tampering** | Attacker inserts `"role": "OWNER"` or `"permissions": ["*"]` inside JWT | External token claims are strictly ignored for authorization. Roles and permissions are derived exclusively from the internal database membership table. |
+| **Cross-Tenant Access (BOLA / IDOR)** | Attacker in Merchant A attempts to access Merchant B endpoints | Server-side `require_permission` dependency verifies tenant membership in DB; database composite foreign keys prevent cross-tenant data traversal. |
+| **Instant Revocation Delay** | Revoked or suspended user continues to call API with still-valid token | Membership status is queried on every request. Statuses `SUSPENDED` and `REVOKED` immediately return HTTP 403 Forbidden without waiting for token expiry. |
+| **Privilege Escalation** | `ADMIN` or `OPERATOR` attempts to mutate `OWNER` status or demote owners | Explicit `OWNERSHIP_MANAGE` permission required for owner-level changes. Row-level `SELECT FOR UPDATE` prevents demoting the last active owner. |
+| **ReDoS / Token Flooding** | Attacker sends massive strings in `Authorization` header | Bounded token size check strictly enforces `<= 8192` bytes prior to parsing. |
+

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { AuthProvider } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Sidebar, NavTab } from "@/components/layout/Sidebar";
 import { SystemStatus } from "@/components/system/SystemStatus";
@@ -17,11 +18,12 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>("overview");
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
-      <Navbar />
+    <AuthProvider>
+      <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+        <Navbar />
 
-      <div className="flex-1 flex flex-col md:flex-row">
-        <Sidebar currentTab={currentTab} onTabChange={setCurrentTab} />
+        <div className="flex-1 flex flex-col md:flex-row">
+          <Sidebar currentTab={currentTab} onTabChange={setCurrentTab} />
 
         <main className="flex-1 p-6 md:p-8 max-w-7xl overflow-y-auto space-y-8">
           {currentTab === "overview" && (
@@ -178,5 +180,6 @@ export default function Home() {
         </main>
       </div>
     </div>
+  </AuthProvider>
   );
 }

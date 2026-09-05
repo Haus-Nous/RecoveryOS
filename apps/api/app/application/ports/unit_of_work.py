@@ -3,6 +3,11 @@
 from types import TracebackType
 from typing import Protocol, Self
 
+from app.application.ports.identity_repositories import (
+    MembershipRepository,
+    UserIdentityRepository,
+    UserRepository,
+)
 from app.application.ports.repositories import (
     DomainEventRepository,
     OrderRepository,
@@ -28,6 +33,9 @@ class UnitOfWork(Protocol):
     recovery_actions: RecoveryActionRepository
     recovery_outcomes: RecoveryOutcomeRepository
     events: DomainEventRepository
+    users: UserRepository
+    user_identities: UserIdentityRepository
+    memberships: MembershipRepository
 
     async def __aenter__(self) -> Self:
         """Enter transactional context."""

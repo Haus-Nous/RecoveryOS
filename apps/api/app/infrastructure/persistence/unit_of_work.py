@@ -15,6 +15,9 @@ from app.infrastructure.persistence.models.outbox import OutboxMessageModel
 from app.infrastructure.persistence.repositories.domain_event_repo import (
     SqlAlchemyDomainEventRepository,
 )
+from app.infrastructure.persistence.repositories.membership_repo import (
+    SqlAlchemyMembershipRepository,
+)
 from app.infrastructure.persistence.repositories.order_repo import (
     SqlAlchemyOrderRepository,
 )
@@ -35,6 +38,10 @@ from app.infrastructure.persistence.repositories.recovery_outcome_repo import (
 )
 from app.infrastructure.persistence.repositories.recovery_proposal_repo import (
     SqlAlchemyRecoveryProposalRepository,
+)
+from app.infrastructure.persistence.repositories.user_repo import (
+    SqlAlchemyUserIdentityRepository,
+    SqlAlchemyUserRepository,
 )
 
 
@@ -59,6 +66,9 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
         self.recovery_actions = SqlAlchemyRecoveryActionRepository(self._session)
         self.recovery_outcomes = SqlAlchemyRecoveryOutcomeRepository(self._session)
         self.events = SqlAlchemyDomainEventRepository(self._session)
+        self.users = SqlAlchemyUserRepository(self._session)
+        self.user_identities = SqlAlchemyUserIdentityRepository(self._session)
+        self.memberships = SqlAlchemyMembershipRepository(self._session)
 
         return self
 
