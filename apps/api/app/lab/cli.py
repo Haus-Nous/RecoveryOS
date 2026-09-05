@@ -103,12 +103,18 @@ def handle_generate(args: argparse.Namespace) -> int:
     target_dir = config.output_dir / dataset_id
 
     if args.dry_run:
+        generator = SyntheticLabGenerator(config, labels_version=SCHEMA_VERSION)
+        journey_count = 0
+        event_count = 0
+        for _journey, events, _gt in generator.generate_stream():
+            journey_count += 1
+            event_count += len(events)
         print(f"--- Synthetic Lab Dry Run: {dataset_id} ---")
         print(f"Seed: {config.seed}")
-        print(f"Journeys: {config.journey_count}")
+        print(f"Journeys: {journey_count}")
         print(f"Merchants: {config.merchant_count}")
         print(f"Generation Profile: {config.generation_profile}")
-        print(f"Estimated Events: ~{config.journey_count * 4}")
+        print(f"Estimated Events: ~{event_count}")
         print(f"Available Scenarios: {len(SCENARIO_CATALOG)}")
         print(f"Target Directory: {target_dir}")
         print("Dry run completed successfully. No files or database records written.")
@@ -139,6 +145,8 @@ def handle_generate(args: argparse.Namespace) -> int:
             strategy=gt.expected_recovery_strategy_class.value,
             outcome=gt.expected_final_payment_state,
             num_attempts=gt.expected_number_of_attempts,
+            num_events=len(events),
+            merchant_id=journey.merchant_id,
         )
         if args.persist:
             persist_buffer.append((journey, gt))

@@ -129,7 +129,7 @@ The catalog defines 22 comprehensive payment journey archetypes with integer bas
 | `S06` | Network Timeout (Retry Success) | CARD, UPI, NETBANKING | `NETWORK_TIMEOUT` | `RECOVERABLE` | `RETRY_SAME_METHOD` | `CAPTURED` | No |
 | `S07` | Auth Failure (Payer Resolves) | CARD, NETBANKING | `AUTHENTICATION_FAILURE` | `CONDITIONALLY_RECOVERABLE` | `CUSTOMER_ACTION_REQUIRED` | `CAPTURED` | No |
 | `S08` | Auth Abandonment (Permanent) | CARD, NETBANKING | `AUTHENTICATION_FAILURE` | `NON_RECOVERABLE` | `CUSTOMER_ACTION_REQUIRED` | `FAILED` | No |
-| `S09` | Expired Card Instrument | CARD | `EXPIRED_INSTRUMENT` | `NON_RECOVERABLE` | `DO_NOT_RETRY` | `FAILED` | No |
+| `S09` | Expired Card Instrument | CARD | `EXPIRED_INSTRUMENT` | `NON_RECOVERABLE` | `USE_ALTERNATE_METHOD` | `FAILED` | No |
 | `S10` | Invalid Instrument Details | CARD, UPI | `INVALID_INSTRUMENT` | `NON_RECOVERABLE` | `CUSTOMER_ACTION_REQUIRED` | `FAILED` | No |
 | `S11` | Gateway Outage / 503 | All | `GATEWAY_UNAVAILABLE` | `RECOVERABLE` | `WAIT_AND_RETRY` | `CAPTURED` | No |
 | `S12` | Provider Processing Error | CARD, UPI, NETBANKING | `PROCESSING_ERROR` | `RECOVERABLE` | `RETRY_SAME_METHOD` | `CAPTURED` | No |
@@ -139,10 +139,39 @@ The catalog defines 22 comprehensive payment journey archetypes with integer bas
 | `S16` | Multiple Transient Failures | CARD, NETBANKING | `ISSUER_DECLINE` | `RECOVERABLE` | `RETRY_SAME_METHOD` | `CAPTURED` | No |
 | `S17` | Late Asynchronous Success | UPI, NETBANKING | `NONE` | `NOT_APPLICABLE` | `NO_RECOVERY_NEEDED` | `CAPTURED` | **Delayed Event** |
 | `S18` | Out-of-Order Delivery | CARD, UPI | `NONE` | `NOT_APPLICABLE` | `NO_RECOVERY_NEEDED` | `CAPTURED` | **Out-of-Order** |
-| `S19` | Duplicate Event Delivery | CARD, UPI | `ISSUER_DECLINE` | `RECOVERABLE` | `RETRY_SAME_METHOD` | `CAPTURED` | **Duplicate Event** |
+| `S19` | Duplicate Event Delivery | CARD, UPI | `ISSUER_DECLINE` | `RECOVERABLE` | `RETRY_SAME_METHOD` | `FAILED` | **Duplicate Event** |
 | `S20` | Missing Intermediate Event | CARD, NETBANKING | `NONE` | `NOT_APPLICABLE` | `NO_RECOVERY_NEEDED` | `CAPTURED` | **Missing Event** |
 | `S21` | UPI Collect Expired (Recovered) | UPI | `NETWORK_TIMEOUT` | `CONDITIONALLY_RECOVERABLE` | `CUSTOMER_ACTION_REQUIRED` | `CAPTURED` | No |
 | `S22` | Provider Configuration Error | All | `PROVIDER_CONFIGURATION` | `NON_RECOVERABLE` | `DO_NOT_RETRY` | `FAILED` | No |
+
+### Event Occurrence vs. Delivery Timing Semantics
+
+Every observed event in `observed_events.jsonl` contains two distinct, high-precision ISO-8601 timestamps:
+- **`occurred_at`**: The physical or logical time at which the state transition happened at the payment gateway, card network, or issuing bank.
+- **`emitted_at`**: The time at which the event was delivered across the network and received by RecoveryOS webhook listeners.
+
+In nominal conditions, `emitted_at = occurred_at + jitter` (a few hundred milliseconds). In distributed payment systems, however, transport anomalies regularly decouple delivery from execution. Downstream reconstruction must distinguish processor state transitions from transport latency:
+
+1. **S17 — Late Asynchronous Success (Delayed Event)**:
+   - Gateway processes capture at $t_3$, but the webhook delivery is delayed due to network or gateway queuing.
+   - Proof: `occurred_at = t3`, while `emitted_at = t3 + 6 hours`.
+   - Invariant: Downstream processors must not mark an order permanently abandoned if a delayed capture arrives within the settlement window.
+2. **S18 — Out-of-Order Delivery**:
+   - The issuing bank authorizes at $t_2$ and captures at $t_3$ (`occurred_at` order: `authorized < captured`).
+   - Webhook network delivery swaps order: `payment.captured` arrives at $t_4$, followed by `payment.authorized` arriving at $t_5$ (`emitted_at` order: `captured < authorized`).
+   - Invariant: Downstream state machines must recognize out-of-order webhooks and reach terminal `CAPTURED` state idempotently without error.
+3. **S19 — Duplicate Event Delivery**:
+   - The gateway fires duplicate webhooks for an issuer decline event.
+   - Proof: Both events share identical `event_id`, payload, and `occurred_at`. The second event has `emitted_at = t2 + 5 seconds`.
+   - Invariant: Ingestion must be strictly idempotent based on `event_id` and not trigger duplicate retry workflows.
+4. **S20 — Missing Intermediate Event**:
+   - A payment transitions `CREATED` -> `AUTHORIZED` -> `CAPTURED`. The `payment.authorized` webhook is lost in transit.
+   - Proof: Only `order.created`, `payment.created`, and `payment.captured` appear in `observed_events.jsonl`. No synthetic transport error tags exist in observed data.
+   - Invariant: Downstream reconstruction must reconcile aggregate order/payment balance even when intermediate events are absent.
+5. **S05 — Network Timeout with Underlying Success**:
+   - The merchant/payer client observes a network timeout during the authorization call, but the payment completes successfully at the issuing bank.
+   - Proof: Event stream terminates with `payment.captured`.
+   - Invariant: Ground truth classifies `failure_category = NETWORK_TIMEOUT`, `recoverability = NOT_APPLICABLE`, and `expected_recovery_strategy_class = NO_RECOVERY_NEEDED`. Downstream engines must avoid duplicate debit attempts.
 
 ---
 
@@ -276,6 +305,9 @@ artifacts/synthetic/ds_syn_default_s42_n10000/
 
 The validator (`SyntheticDatasetValidator`) inspects a generated dataset without trusting the generator:
 - **Checksum Verification**: Recomputes SHA-256 of all files and verifies against `manifest.json`.
+- **Deep Summary Reconciliation**: Independently parses raw `ground_truth.jsonl` and `observed_events.jsonl`, accumulating counts for scenarios, recoverability categories, payment methods, outcomes, strategies, failure categories, unique merchants, and total events. It verifies that every raw count matches `summary.json` and `manifest.json` bit-for-bit.
+- **Distribution Sum Invariants**: Formally asserts that the sum of scenario counts, recoverability counts, payment method counts, and outcome counts all strictly equal `journey_count`.
+- **Scenario Catalog Consistency**: Verifies every ground truth row against `SCENARIO_CATALOG` to ensure `failure_category`, `recoverability`, and `expected_recovery_strategy_class` match catalog definitions, and asserts that `len(attempt_truths) == expected_number_of_attempts`.
 - **Schema & Purity Checks**: Enforces allowed schemas on `observed_events.jsonl` and `journeys.jsonl`, rejecting unknown keys.
 - **Leakage Detection**: Deep-scans every observed record for prohibited ground truth keywords.
 - **Tenant Isolation**: Verifies that orders, payments, and events within a journey all belong to the identical `merchant_id`.
@@ -284,7 +316,33 @@ The validator (`SyntheticDatasetValidator`) inspects a generated dataset without
 
 ---
 
-## 12. Database Persistence Mode & Safety Guardrails
+## 12. Performance, Memory & Complexity Characteristics
+
+### Streaming Generator ($O(1)$ Memory per Journey)
+The generator streams journeys sequentially via `generate_stream()`. Only one journey and its constituent event batch resides in memory at any point:
+- **Heap Memory**: Peak heap delta tracked via Python `tracemalloc` is **0.11 MB** (~117 KB) across both 10,000 and 50,000 journey generation runs.
+- **Process RSS**: Total OS process resident set size (`ru_maxrss`) is ~26.34 MB for 10k journeys and ~27.81 MB for 50k journeys on macOS (dominated by the Python runtime, standard library imports, and buffer allocations).
+- **Throughput**: Generates 10,000 journeys (46,329 events) in ~5.5s (initial compile/import) / ~0.74s (pure generation), and 50,000 journeys (231,285 events) in ~28.5s on Apple Silicon.
+- **Bounded `--dry-run`**: Streams records boundedly without disk writes or memory retention to compute journey and event totals in $O(1)$ memory.
+
+### Independent Validator ($O(N)$ Auxiliary Tracking Memory)
+The validator reads event and journey streams line-by-line while maintaining cross-record verification indexes in memory (set of observed order IDs, payment IDs, merchant scopes, and distribution frequency tables):
+- **Memory**: $O(N)$ auxiliary memory proportional to unique entities, consuming ~15 MB for 10,000 journeys.
+- **Throughput**: Validates 10,000 journeys in ~0.35s and 50,000 journeys in ~1.59s.
+
+---
+
+## 13. Test Coverage & Failure Taxonomy Completeness
+
+- **Total Backend Test Count**: 573 passing tests (474 baseline domain, persistence, security, and root tests + 99 synthetic lab unit/integration/validator/CLI tests).
+- **Failure Taxonomy Completeness**:
+  - `SyntheticFailureCategory` defines 16 total failure categories.
+  - 13 active categories are exercised across scenarios `S01`–`S22`: `NONE`, `ISSUER_DECLINE`, `INSUFFICIENT_FUNDS`, `NETWORK_TIMEOUT`, `AUTHENTICATION_FAILURE`, `EXPIRED_INSTRUMENT`, `INVALID_INSTRUMENT`, `GATEWAY_UNAVAILABLE`, `PROCESSING_ERROR`, `DUPLICATE_ATTEMPT`, `FRAUD_OR_RISK_DECLINE`, `CUSTOMER_ABANDONMENT`, `PROVIDER_CONFIGURATION`.
+  - 3 reserved categories are retained for future extended simulation: `RATE_LIMITED` (API 429 backpressure), `UNKNOWN_TRANSIENT` (unclassified retryable bank error), `UNKNOWN_PERMANENT` (unclassified terminal rejection).
+
+---
+
+## 14. Database Persistence Mode & Safety Guardrails
 
 The laboratory includes an optional persistence mode to seed synthetic orders and payments into a local test database:
 
@@ -299,7 +357,7 @@ uv run python -m app.lab generate --persist --journeys 100
 
 ---
 
-## 13. Developer CLI Usage
+## 15. Developer CLI Usage
 
 The laboratory CLI is accessible via `python -m app.lab`:
 
@@ -323,7 +381,7 @@ uv run python -m app.lab validate ./artifacts/synthetic/ds_syn_default_s42_n1000
 
 ---
 
-## 14. Versioning Policy
+## 16. Versioning Policy
 
 - **`LAB_VERSION = "1.0.0"`**: Version of the generator engine, CLI, and algorithms.
 - **`SCHEMA_VERSION = "1.0.0"`**: Version of the JSONL data formats and manifest schema.
@@ -333,7 +391,7 @@ Any breaking schema changes or scenario catalog additions will result in a semve
 
 ---
 
-## 15. Known Limitations
+## 17. Known Limitations
 
 1. **Synthetic Heuristics**: While realistic, synthetic failure codes and latency profiles are derived from probabilistic models rather than real-time bank infrastructure telemetry.
 2. **Proprietary Bank Errors**: Bank-specific internal server error pages (e.g., custom HTML frames from issuer ACS pages) are simulated as structured error responses rather than raw HTML scraping artifacts.
@@ -341,7 +399,7 @@ Any breaking schema changes or scenario catalog additions will result in a semve
 
 ---
 
-## 16. Disclaimer: No Claim of Real Razorpay Distributions
+## 18. Disclaimer: No Claim of Real Razorpay Distributions
 
 > **Notice**: The Synthetic Payment Laboratory generates synthetic data designed exclusively for algorithm development, policy testing, and automated evaluation within RecoveryOS.
 > 

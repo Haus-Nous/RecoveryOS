@@ -42,6 +42,8 @@ class ManifestBuilder:
         self.strategies: dict[str, int] = {}
         self.outcomes: dict[str, int] = {}
         self.attempts: dict[int, int] = {}
+        self.total_events: int = 0
+        self.merchants: set[str] = set()
 
     def record_journey_stats(
         self,
@@ -52,6 +54,8 @@ class ManifestBuilder:
         strategy: str,
         outcome: str,
         num_attempts: int,
+        num_events: int = 0,
+        merchant_id: str = "",
     ) -> None:
         """Increment distribution counters for a generated journey."""
         self.scenarios[scenario_id] = self.scenarios.get(scenario_id, 0) + 1
@@ -63,6 +67,9 @@ class ManifestBuilder:
         self.strategies[strategy] = self.strategies.get(strategy, 0) + 1
         self.outcomes[outcome] = self.outcomes.get(outcome, 0) + 1
         self.attempts[num_attempts] = self.attempts.get(num_attempts, 0) + 1
+        self.total_events += num_events
+        if merchant_id:
+            self.merchants.add(merchant_id)
 
     def write_summary(self) -> tuple[Path, str, int]:
         """Write summary.json and return its path, SHA-256 hash, and size in bytes."""
@@ -97,7 +104,9 @@ class ManifestBuilder:
                 k: {"count": v, "percentage": round(v / total * 100, 2)}
                 for k, v in sorted(self.strategies.items())
             },
+            "total_events": self.total_events,
             "total_journeys": total,
+            "total_merchants": len(self.merchants),
         }
 
         summary_path = self.output_dir / "summary.json"

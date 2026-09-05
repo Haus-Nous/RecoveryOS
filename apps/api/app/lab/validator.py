@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.lab.scenarios.catalog import SCENARIO_CATALOG
+
 FORBIDDEN_OBSERVED_KEYS = frozenset(
     {
         "recoverability",
@@ -150,6 +152,8 @@ def validate_dataset(dataset_dir: Path) -> ValidationReport:
     journey_amounts: dict[str, int] = {}
     journey_payments: dict[str, set[str]] = {}
     journey_event_ids: dict[str, set[str]] = {}
+    unique_merchants: set[str] = set()
+    raw_payment_methods: dict[str, int] = {}
     journey_count = 0
 
     with journeys_path.open("r", encoding="utf-8") as f:
@@ -181,7 +185,13 @@ def validate_dataset(dataset_dir: Path) -> ValidationReport:
                 errors.append(f"Duplicate or empty journey_id at journeys.jsonl line {line_num}")
             else:
                 journey_ids.add(j_id)
-                journey_merchants[j_id] = j.get("merchant_id", "")
+                m_id = j.get("merchant_id", "")
+                journey_merchants[j_id] = m_id
+                if m_id:
+                    unique_merchants.add(m_id)
+                pm = j.get("payment_method", "")
+                if pm:
+                    raw_payment_methods[pm] = raw_payment_methods.get(pm, 0) + 1
                 journey_orders[j_id] = j.get("order_id", "")
                 journey_amounts[j_id] = j.get("amount_in_cents", 0)
                 journey_payments[j_id] = set(j.get("payment_ids", []))
@@ -260,6 +270,12 @@ def validate_dataset(dataset_dir: Path) -> ValidationReport:
 
     # 4. Ground Truth inspection
     truth_count = 0
+    raw_scenarios: dict[str, int] = {}
+    raw_recoverability: dict[str, int] = {}
+    raw_outcomes: dict[str, int] = {}
+    raw_strategies: dict[str, int] = {}
+    raw_failure_categories: dict[str, int] = {}
+
     with truth_path.open("r", encoding="utf-8") as f:
         for line_num, line in enumerate(f, start=1):
             if not line.strip():
@@ -303,7 +319,146 @@ def validate_dataset(dataset_dir: Path) -> ValidationReport:
                         f"Non-recovered journey must have recovered amount = 0, got {rec_amt} at line {line_num}"
                     )
 
-    # 5. Manifest count checks
+            # Track distributions from raw records
+            s_id = gt.get("scenario_id", "")
+            if s_id:
+                raw_scenarios[s_id] = raw_scenarios.get(s_id, 0) + 1
+            rec = gt.get("recoverability", "")
+            if rec:
+                raw_recoverability[rec] = raw_recoverability.get(rec, 0) + 1
+            out = gt.get("expected_final_payment_state", "")
+            if out:
+                raw_outcomes[out] = raw_outcomes.get(out, 0) + 1
+            strat = gt.get("expected_recovery_strategy_class", "")
+            if strat:
+                raw_strategies[strat] = raw_strategies.get(strat, 0) + 1
+            fc = gt.get("failure_category", "")
+            if fc:
+                raw_failure_categories[fc] = raw_failure_categories.get(fc, 0) + 1
+
+            # Scenario catalog consistency
+            if not s_id or s_id not in SCENARIO_CATALOG:
+                errors.append(f"Ground truth has unknown scenario_id '{s_id}' at line {line_num}")
+            else:
+                sc_def = SCENARIO_CATALOG[s_id]
+                if fc != sc_def.failure_category.value:
+                    errors.append(
+                        f"Scenario {s_id} failure category mismatch: catalog has {sc_def.failure_category.value}, got {fc} at line {line_num}"
+                    )
+                if rec != sc_def.recoverability.value:
+                    errors.append(
+                        f"Scenario {s_id} recoverability mismatch: catalog has {sc_def.recoverability.value}, got {rec} at line {line_num}"
+                    )
+                if strat != sc_def.expected_strategy.value:
+                    errors.append(
+                        f"Scenario {s_id} strategy mismatch: catalog has {sc_def.expected_strategy.value}, got {strat} at line {line_num}"
+                    )
+
+            # Attempt truths validation
+            att_truths = gt.get("attempt_truths", [])
+            exp_attempts = gt.get("expected_number_of_attempts", 0)
+            if not isinstance(att_truths, list) or len(att_truths) != exp_attempts:
+                errors.append(
+                    f"Ground truth attempt_truths count ({len(att_truths) if isinstance(att_truths, list) else 'invalid'}) "
+                    f"!= expected_number_of_attempts ({exp_attempts}) at line {line_num}"
+                )
+
+    # 5. Distribution invariant checks
+    if truth_count != journey_count:
+        errors.append(
+            f"Journey count ({journey_count}) does not match ground truth count ({truth_count})"
+        )
+    if sum(raw_scenarios.values()) != journey_count:
+        errors.append(
+            f"Scenario counts sum ({sum(raw_scenarios.values())}) != journey count ({journey_count})"
+        )
+    if sum(raw_recoverability.values()) != journey_count:
+        errors.append(
+            f"Recoverability counts sum ({sum(raw_recoverability.values())}) != journey count ({journey_count})"
+        )
+    if sum(raw_payment_methods.values()) != journey_count:
+        errors.append(
+            f"Payment method counts sum ({sum(raw_payment_methods.values())}) != journey count ({journey_count})"
+        )
+    if sum(raw_outcomes.values()) != journey_count:
+        errors.append(
+            f"Outcome counts sum ({sum(raw_outcomes.values())}) != journey count ({journey_count})"
+        )
+
+    # 6. Summary inspection & deep reconciliation
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        errors.append(f"Failed to parse summary.json: {e}")
+        summary = {}
+
+    if summary:
+        if summary.get("total_journeys") != journey_count:
+            errors.append(
+                f"Summary total_journeys mismatch: summary has {summary.get('total_journeys')}, raw recomputed {journey_count}"
+            )
+        if "total_events" in summary and summary.get("total_events") != event_count:
+            errors.append(
+                f"Summary total_events mismatch: summary has {summary.get('total_events')}, raw recomputed {event_count}"
+            )
+        if "total_merchants" in summary and summary.get("total_merchants") != len(unique_merchants):
+            errors.append(
+                f"Summary total_merchants mismatch: summary has {summary.get('total_merchants')}, raw recomputed {len(unique_merchants)}"
+            )
+
+        # Scenario distribution reconciliation
+        summary_scenarios = summary.get("scenario_distribution", {})
+        for scen_key, s_info in summary_scenarios.items():
+            exp_c = raw_scenarios.get(scen_key, 0)
+            act_c = s_info.get("count") if isinstance(s_info, dict) else None
+            if act_c != exp_c:
+                errors.append(
+                    f"Summary scenario count mismatch for {scen_key}: summary has {act_c}, raw recomputed {exp_c}"
+                )
+        for scen_key in raw_scenarios:
+            if scen_key not in summary_scenarios:
+                errors.append(f"Scenario {scen_key} in raw data missing from summary.json")
+
+        # Recoverability distribution reconciliation
+        summary_rec = summary.get("recoverability_distribution", {})
+        for r_key, r_info in summary_rec.items():
+            exp_c = raw_recoverability.get(r_key, 0)
+            act_c = r_info.get("count") if isinstance(r_info, dict) else None
+            if act_c != exp_c:
+                errors.append(
+                    f"Summary recoverability count mismatch for {r_key}: summary has {act_c}, raw recomputed {exp_c}"
+                )
+        for r_key in raw_recoverability:
+            if r_key not in summary_rec:
+                errors.append(f"Recoverability {r_key} in raw data missing from summary.json")
+
+        # Payment method distribution reconciliation
+        summary_pm = summary.get("payment_method_distribution", {})
+        for pm_key, m_info in summary_pm.items():
+            exp_c = raw_payment_methods.get(pm_key, 0)
+            act_c = m_info.get("count") if isinstance(m_info, dict) else None
+            if act_c != exp_c:
+                errors.append(
+                    f"Summary payment method count mismatch for {pm_key}: summary has {act_c}, raw recomputed {exp_c}"
+                )
+        for pm_key in raw_payment_methods:
+            if pm_key not in summary_pm:
+                errors.append(f"Payment method {pm_key} in raw data missing from summary.json")
+
+        # Outcome distribution reconciliation
+        summary_out = summary.get("outcome_distribution", {})
+        for o_key, o_info in summary_out.items():
+            exp_c = raw_outcomes.get(o_key, 0)
+            act_c = o_info.get("count") if isinstance(o_info, dict) else None
+            if act_c != exp_c:
+                errors.append(
+                    f"Summary outcome count mismatch for {o_key}: summary has {act_c}, raw recomputed {exp_c}"
+                )
+        for o_key in raw_outcomes:
+            if o_key not in summary_out:
+                errors.append(f"Outcome {o_key} in raw data missing from summary.json")
+
+    # 7. Manifest count checks & manifest/summary agreement
     manifest_rec_counts = manifest.get("record_counts", {})
     if journey_count != manifest.get("actual_journey_count"):
         errors.append(
@@ -321,6 +476,28 @@ def validate_dataset(dataset_dir: Path) -> ValidationReport:
         errors.append(
             f"Manifest observed_events count mismatch: {manifest_rec_counts.get('observed_events')} vs {event_count}"
         )
+
+    if summary:
+        if manifest.get("actual_journey_count") != summary.get("total_journeys"):
+            errors.append(
+                f"Manifest/summary journey count mismatch: manifest says {manifest.get('actual_journey_count')}, summary says {summary.get('total_journeys')}"
+            )
+        if manifest_rec_counts.get("journeys") != summary.get("total_journeys"):
+            errors.append(
+                f"Manifest record_counts.journeys ({manifest_rec_counts.get('journeys')}) != summary total_journeys ({summary.get('total_journeys')})"
+            )
+        if "total_events" in summary and manifest_rec_counts.get("observed_events") != summary.get(
+            "total_events"
+        ):
+            errors.append(
+                f"Manifest record_counts.observed_events ({manifest_rec_counts.get('observed_events')}) != summary total_events ({summary.get('total_events')})"
+            )
+        if "total_merchants" in summary and manifest.get("merchant_count") != summary.get(
+            "total_merchants"
+        ):
+            errors.append(
+                f"Manifest merchant_count ({manifest.get('merchant_count')}) != summary total_merchants ({summary.get('total_merchants')})"
+            )
 
     stats["journeys"] = journey_count
     stats["events"] = event_count
