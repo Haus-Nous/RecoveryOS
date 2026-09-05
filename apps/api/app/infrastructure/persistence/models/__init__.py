@@ -8,6 +8,9 @@ from app.infrastructure.persistence.models.order import OrderModel
 from app.infrastructure.persistence.models.outbox import OutboxMessageModel
 from app.infrastructure.persistence.models.payment import PaymentModel
 from app.infrastructure.persistence.models.policy import PolicyModel
+from app.infrastructure.persistence.models.provider_connection import (
+    PaymentProviderConnectionModel,
+)
 from app.infrastructure.persistence.models.recovery_action import RecoveryActionModel
 from app.infrastructure.persistence.models.recovery_case import RecoveryCaseModel
 from app.infrastructure.persistence.models.recovery_outcome import RecoveryOutcomeModel
@@ -22,6 +25,7 @@ __all__ = [
     "OrderModel",
     "OutboxMessageModel",
     "PaymentModel",
+    "PaymentProviderConnectionModel",
     "PolicyModel",
     "RecoveryActionModel",
     "RecoveryCaseModel",

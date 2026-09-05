@@ -8,6 +8,9 @@ from app.application.ports.identity_repositories import (
     UserIdentityRepository,
     UserRepository,
 )
+from app.application.ports.provider_connection_repo import (
+    ProviderConnectionRepository,
+)
 from app.application.ports.repositories import (
     DomainEventRepository,
     OrderRepository,
@@ -36,6 +39,7 @@ class UnitOfWork(Protocol):
     users: UserRepository
     user_identities: UserIdentityRepository
     memberships: MembershipRepository
+    payment_provider_connections: ProviderConnectionRepository
 
     async def __aenter__(self) -> Self:
         """Enter transactional context."""

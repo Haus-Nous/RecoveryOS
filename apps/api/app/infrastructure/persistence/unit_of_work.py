@@ -27,6 +27,9 @@ from app.infrastructure.persistence.repositories.payment_repo import (
 from app.infrastructure.persistence.repositories.policy_repo import (
     SqlAlchemyPolicyRepository,
 )
+from app.infrastructure.persistence.repositories.provider_connection_repo import (
+    SqlAlchemyProviderConnectionRepository,
+)
 from app.infrastructure.persistence.repositories.recovery_action_repo import (
     SqlAlchemyRecoveryActionRepository,
 )
@@ -69,6 +72,7 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
         self.users = SqlAlchemyUserRepository(self._session)
         self.user_identities = SqlAlchemyUserIdentityRepository(self._session)
         self.memberships = SqlAlchemyMembershipRepository(self._session)
+        self.payment_provider_connections = SqlAlchemyProviderConnectionRepository(self._session)
 
         return self
 
